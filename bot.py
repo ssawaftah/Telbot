@@ -185,43 +185,43 @@ class KeyboardManager:
         return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
     @staticmethod
-    def get_category_content_keyboard(category_id):
-        content_data = BotDatabase.read_json(CONTENT_FILE)
-        category_content = [item for item in content_data.get("content", []) if item.get("category_id") == category_id]
-        
-        keyboard = []
-        for item in category_content:
-            keyboard.append([InlineKeyboardButton(item['title'], callback_data=f"content_{item['id']}")])
-        
-        keyboard.append([InlineKeyboardButton("🔙 رجوع للأقسام", callback_data="back_to_categories")])
-        return InlineKeyboardMarkup(keyboard)
+def get_category_content_keyboard(category_id):
+    content_data = BotDatabase.read_json(CONTENT_FILE)
+    category_content = [item for item in content_data.get("content", []) if item.get("category_id") == category_id]
+    
+    keyboard = []
+    for item in category_content:
+        keyboard.append([InlineKeyboardButton(item['title'], callback_data=f"content_{item['id']}")])
+    
+    keyboard.append([InlineKeyboardButton("🔙 رجوع للأقسام", callback_data="back_to_categories")])
+    return InlineKeyboardMarkup(keyboard)
 
-    @staticmethod
-    def get_content_navigation_keyboard(content_id, category_id):
-        content_data = BotDatabase.read_json(CONTENT_FILE)
-        category_content = [item for item in content_data.get("content", []) if item.get("category_id") == category_id]
-        
-        if not category_content:
-            return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data=f"category_{category_id}")]])
-        
-        current_index = next((i for i, item in enumerate(category_content) if item['id'] == content_id), 0)
-        
-        keyboard_buttons = []
-        
-        # زر السابق
-        if current_index > 0:
-            prev_content = category_content[current_index - 1]
-            keyboard_buttons.append(InlineKeyboardButton("⬅️ السابق", callback_data=f"content_{prev_content['id']}"))
-        
-        # زر الرجوع
-        keyboard_buttons.append(InlineKeyboardButton("🔙 رجوع", callback_data=f"category_{category_id}"))
-        
-        # زر التالي
-        if current_index < len(category_content) - 1:
-            next_content = category_content[current_index + 1]
-            keyboard_buttons.append(InlineKeyboardButton("التالي ➡️", callback_data=f"content_{next_content['id']}"))
-        
-        return InlineKeyboardMarkup([keyboard_buttons])
+   @staticmethod
+def get_content_navigation_keyboard(content_id, category_id):
+    content_data = BotDatabase.read_json(CONTENT_FILE)
+    category_content = [item for item in content_data.get("content", []) if item.get("category_id") == category_id]
+    
+    if not category_content:
+        return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data=f"back_to_category_{category_id}")]])
+    
+    current_index = next((i for i, item in enumerate(category_content) if item['id'] == content_id), 0)
+    
+    keyboard_buttons = []
+    
+    # زر السابق
+    if current_index > 0:
+        prev_content = category_content[current_index - 1]
+        keyboard_buttons.append(InlineKeyboardButton("⬅️ السابق", callback_data=f"content_{prev_content['id']}"))
+    
+    # زر الرجوع - تم التعديل هنا
+    keyboard_buttons.append(InlineKeyboardButton("🔙 رجوع", callback_data=f"back_to_category_{category_id}"))
+    
+    # زر التالي
+    if current_index < len(category_content) - 1:
+        next_content = category_content[current_index + 1]
+        keyboard_buttons.append(InlineKeyboardButton("التالي ➡️", callback_data=f"content_{next_content['id']}"))
+    
+    return InlineKeyboardMarkup([keyboard_buttons])
 
     @staticmethod
     def get_recent_posts_keyboard():
@@ -1644,6 +1644,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_content_item(update, context, content_id)
     elif data.startswith("category_"):
         category_id = int(data.split("_")[1])
+        await show_category_content_list(update, context, category_id)
+    elif data.startswith("back_to_category_"):  # أضف هذا السطر
+        category_id = int(data.split("_")[3])  # back_to_category_{category_id}
         await show_category_content_list(update, context, category_id)
     elif data == "back_to_categories":
         await show_categories_to_user(update, context)
