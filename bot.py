@@ -13,8 +13,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# بيانات البوت
-BOT_TOKEN = "8240559018:AAEGsGl-pKEPM3kCenefbE4DfLMQ1Ci586g"
+# بيانات البوت - سيتم تعيين التوكن من متغير البيئة
+BOT_TOKEN = os.getenv('BOT_TOKEN', 'YOUR_BOT_TOKEN_HERE')
 ADMIN_IDS = []  # سيتم إضافة المدير تلقائياً
 
 # حالات المحادثة
@@ -165,6 +165,10 @@ class KeyboardManager:
         ], resize_keyboard=True)
 
     @staticmethod
+    def get_waiting_keyboard():
+        return ReplyKeyboardMarkup([["⏳ انتظر الموافقة"]], resize_keyboard=True)
+
+    @staticmethod
     def get_back_keyboard():
         return ReplyKeyboardMarkup([["🏠 الرئيسية"]], resize_keyboard=True)
 
@@ -218,6 +222,26 @@ class KeyboardManager:
             keyboard_buttons.append(InlineKeyboardButton("التالي ➡️", callback_data=f"content_{next_content['id']}"))
         
         return InlineKeyboardMarkup([keyboard_buttons])
+
+    @staticmethod
+    def get_recent_posts_keyboard():
+        content_data = BotDatabase.read_json(CONTENT_FILE)
+        all_content = content_data.get("content", [])
+        
+        # تصفية المحتوى النصي فقط وترتيبه من الأحدث
+        text_content = [item for item in all_content if item.get('content_type') == 'text']
+        recent_posts = sorted(text_content, key=lambda x: x.get('created_date', ''), reverse=True)[:7]
+        
+        keyboard = []
+        for post in recent_posts:
+            # تقصير العنوان إذا كان طويلاً
+            title = post['title']
+            if len(title) > 30:
+                title = title[:27] + "..."
+            keyboard.append([InlineKeyboardButton(title, callback_data=f"content_{post['id']}")])
+        
+        keyboard.append([InlineKeyboardButton("🔙 رجوع للرئيسية", callback_data="back_to_main")])
+        return InlineKeyboardMarkup(keyboard)
 
     @staticmethod
     def get_user_management_keyboard():
@@ -280,8 +304,30 @@ class KeyboardManager:
 def is_admin(user_id):
     return str(user_id) in [str(admin_id) for admin_id in ADMIN_IDS]
 
+def is_user_approved(user_id):
+    users = BotDatabase.read_json(USERS_FILE)
+    user_data = users.get(str(user_id), {})
+    return user_data.get('approved', False)
+
 async def check_subscription(user_id, context):
-    return True
+    """التحقق من اشتراك المستخدم في القنوات المطلوبة"""
+    if not BotDatabase.get_setting("subscription.enabled"):
+        return True
+    
+    channels = BotDatabase.get_setting("subscription.channels")
+    if not channels:
+        return True
+    
+    try:
+        for channel in channels:
+            # التحقق من اشتراك المستخدم في القناة
+            chat_member = await context.bot.get_chat_member(chat_id=channel, user_id=user_id)
+            if chat_member.status in ['left', 'kicked', 'restricted']:
+                return False
+        return True
+    except Exception as e:
+        logger.error(f"Error checking subscription for {user_id}: {e}")
+        return False
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -295,21 +341,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
-    if is_admin(user_id):
-        await update.message.reply_text(
-            f"👑 أهلاً بك يا {update.effective_user.first_name}!\n"
-            "أنت مسجل كمشرف على البوت.\n\n"
-            "اختر من لوحة التحكم أدناه:",
-            reply_markup=KeyboardManager.get_admin_keyboard()
-        )
-        return
-    
     users = BotDatabase.read_json(USERS_FILE)
     user_key = str(user_id)
     
     if user_key in users:
         user_data = users[user_key]
         if user_data.get("approved", False):
+            # التحقق من الاشتراك الإجباري
             if BotDatabase.get_setting("subscription.enabled"):
                 if not await check_subscription(user_id, context):
                     channels = BotDatabase.get_setting("subscription.channels")
@@ -323,18 +361,29 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     )
                     return
             
-            await update.message.reply_text(
-                f"مرحباً مرة أخرى {update.effective_user.first_name}! 👋\n"
-                "اختر من القائمة أدناه:",
-                reply_markup=KeyboardManager.get_user_keyboard()
-            )
+            # المستخدم مفعل وملتزم بالاشتراك
+            if is_admin(user_id):
+                await update.message.reply_text(
+                    f"👑 أهلاً بك يا {update.effective_user.first_name}!\n"
+                    "أنت مسجل كمشرف على البوت.\n\n"
+                    "اختر من لوحة التحكم أدناه:",
+                    reply_markup=KeyboardManager.get_admin_keyboard()
+                )
+            else:
+                await update.message.reply_text(
+                    f"مرحباً مرة أخرى {update.effective_user.first_name}! 👋\n"
+                    "اختر من القائمة أدناه:",
+                    reply_markup=KeyboardManager.get_user_keyboard()
+                )
         else:
+            # المستخدم غير مفعل
             await update.message.reply_text(
                 "⏳ طلبك قيد المراجعة من قبل المدير...\n"
                 "سيتم إعلامك فور الموافقة على طلبك.",
-                reply_markup=ReplyKeyboardMarkup([["⏳ انتظر الموافقة"]], resize_keyboard=True)
+                reply_markup=KeyboardManager.get_waiting_keyboard()
             )
     else:
+        # مستخدم جديد
         BotDatabase.add_user(user_id, update.effective_user.username, update.effective_user.first_name)
         
         for admin_id in ADMIN_IDS:
@@ -359,10 +408,35 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "✅ تم إرسال طلب انضمامك بنجاح!\n"
             "سيتم مراجعته من قبل المدير قريباً.",
-            reply_markup=ReplyKeyboardMarkup([["⏳ انتظر الموافقة"]], resize_keyboard=True)
+            reply_markup=KeyboardManager.get_waiting_keyboard()
         )
 
 async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+    user_id = update.effective_user.id
+    
+    # التحقق من أن المستخدم مفعل
+    if not is_user_approved(user_id):
+        await update.message.reply_text(
+            "⏳ طلبك قيد المراجعة من قبل المدير...\n"
+            "سيتم إعلامك فور الموافقة على طلبك.",
+            reply_markup=KeyboardManager.get_waiting_keyboard()
+        )
+        return
+    
+    # التحقق من الاشتراك الإجباري
+    if BotDatabase.get_setting("subscription.enabled"):
+        if not await check_subscription(user_id, context):
+            channels = BotDatabase.get_setting("subscription.channels")
+            channels_text = "\n".join([f"• {ch}" for ch in channels])
+            
+            await update.message.reply_text(
+                f"{BotDatabase.get_setting('subscription.message')}\n\n"
+                f"القنوات المطلوبة:\n{channels_text}\n\n"
+                "بعد الاشتراك، اضغط على /start مرة أخرى",
+                reply_markup=ReplyKeyboardMarkup([["✅ تحقق من الاشتراك"]], resize_keyboard=True)
+            )
+            return
+    
     if text == "📂 تصفح الأقسام":
         await show_categories_to_user(update, context)
     elif text == "📰 آخر المشاركات":
@@ -384,6 +458,12 @@ async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             )
     elif text == "🏠 الرئيسية":
         await update.message.reply_text("🏠 العودة للرئيسية", reply_markup=KeyboardManager.get_user_keyboard())
+    elif text == "⏳ انتظر الموافقة":
+        await update.message.reply_text(
+            "⏳ طلبك قيد المراجعة من قبل المدير...\n"
+            "سيتم إعلامك فور الموافقة على طلبك.",
+            reply_markup=KeyboardManager.get_waiting_keyboard()
+        )
     else:
         await handle_category_selection(update, context, text)
 
@@ -400,26 +480,13 @@ async def show_recent_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     text = "📰 آخر المشاركات النصية:\n\n"
+    text += "اختر المشاركة التي تريد قراءتها:"
     
-    for i, post in enumerate(recent_posts, 1):
-        # الحصول على اسم القسم
-        category_name = "غير معروف"
-        for cat in content_data.get("categories", []):
-            if cat['id'] == post.get('category_id'):
-                category_name = cat['name']
-                break
-        
-        # عرض جزء من النص (أول 100 حرف)
-        preview = post.get('text_content', '')[:100] + "..." if len(post.get('text_content', '')) > 100 else post.get('text_content', '')
-        
-        text += f"{i}. **{post['title']}**\n"
-        text += f"   📂 القسم: {category_name}\n"
-        text += f"   📝 {preview}\n"
-        text += f"   📅 {post.get('created_date', '')[:10]}\n\n"
-    
-    await update.message.reply_text(text, reply_markup=KeyboardManager.get_user_keyboard())
+    await update.message.reply_text(text, reply_markup=KeyboardManager.get_recent_posts_keyboard())
 
 async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+    user_id = update.effective_user.id
+    
     if text == "👑 لوحة التحكم":
         await show_admin_dashboard(update, context)
     elif text == "👥 إدارة المستخدمين":
@@ -496,6 +563,15 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.message.text
+    
+    # التحقق من أن المستخدم مفعل أولاً
+    if not is_user_approved(user_id) and not is_admin(user_id):
+        await update.message.reply_text(
+            "⏳ طلبك قيد المراجعة من قبل المدير...\n"
+            "سيتم إعلامك فور الموافقة على طلبك.",
+            reply_markup=KeyboardManager.get_waiting_keyboard()
+        )
+        return
     
     if is_admin(user_id):
         await handle_admin_message(update, context, text)
@@ -1555,6 +1631,14 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     user_id = update.effective_user.id
     
+    # التحقق من أن المستخدم مفعل
+    if not is_user_approved(user_id) and not is_admin(user_id):
+        await query.edit_message_text(
+            "⏳ طلبك قيد المراجعة من قبل المدير...\n"
+            "سيتم إعلامك فور الموافقة على طلبك."
+        )
+        return
+    
     if data.startswith("content_"):
         content_id = int(data.split("_")[1])
         await show_content_item(update, context, content_id)
@@ -1563,6 +1647,11 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_category_content_list(update, context, category_id)
     elif data == "back_to_categories":
         await show_categories_to_user(update, context)
+    elif data == "back_to_main":
+        if is_admin(user_id):
+            await query.edit_message_text("🏠 العودة للرئيسية", reply_markup=KeyboardManager.get_admin_keyboard())
+        else:
+            await query.edit_message_text("🏠 العودة للرئيسية", reply_markup=KeyboardManager.get_user_keyboard())
     elif not is_admin(user_id):
         await query.edit_message_text("❌ ليس لديك صلاحية للقيام بهذا الإجراء.")
         return
@@ -1622,6 +1711,11 @@ async def reject_user_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.callback_query.edit_message_text("❌ المستخدم غير موجود")
 
 def main():
+    # التحقق من وجود التوكن
+    if BOT_TOKEN == 'YOUR_BOT_TOKEN_HERE':
+        print("❌ لم يتم تعيين التوكن! يرجى تعيين متغير البيئة BOT_TOKEN")
+        return
+    
     BotDatabase.init_default_data()
     
     application = Application.builder().token(BOT_TOKEN).build()
