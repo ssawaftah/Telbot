@@ -184,50 +184,52 @@ class KeyboardManager:
         keyboard.append(["🏠 الرئيسية"])
         return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-    class KeyboardManager:
     @staticmethod
     def get_category_content_keyboard(category_id):
+        """إرجاع أزرار عادية لمحتوى القسم بدلاً من أزرار داخلية"""
+        content_data = BotDatabase.read_json(CONTENT_FILE)
+        category_content = [item for item in content_data.get("content", []) if item.get("category_id") == category_id]
+        
+        keyboard = []
+        # عرض أول 5 عناصر فقط لتجنب ازدحام الكيبورد
+        for item in category_content[:5]:
+            # تقصير العنوان إذا كان طويلاً
+            title = item['title']
+            if len(title) > 30:
+                title = title[:27] + "..."
+            keyboard.append([f"📖 {title}"])
+        
+        # إذا كان هناك أكثر من 5 عناصر، أضف زر "عرض المزيد"
+        if len(category_content) > 5:
+            keyboard.append(["📋 عرض المزيد"])
+        
+        keyboard.append(["🔙 رجوع للأقسام", "🏠 الرئيسية"])
+        return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+    @staticmethod
+    def get_category_content_inline_keyboard(category_id):
+        """إرجاع أزرار داخلية لجميع محتويات القسم (لخيار عرض المزيد)"""
         content_data = BotDatabase.read_json(CONTENT_FILE)
         category_content = [item for item in content_data.get("content", []) if item.get("category_id") == category_id]
         
         keyboard = []
         for item in category_content:
-            keyboard.append([InlineKeyboardButton(item['title'], callback_data=f"content_{item['id']}")])
+            title = item['title']
+            if len(title) > 30:
+                title = title[:27] + "..."
+            keyboard.append([InlineKeyboardButton(f"📖 {title}", callback_data=f"content_{item['id']}")])
         
         keyboard.append([InlineKeyboardButton("🔙 رجوع للأقسام", callback_data="back_to_categories")])
         return InlineKeyboardMarkup(keyboard)
 
     @staticmethod
     def get_content_navigation_keyboard(content_id, category_id):
+        """إبقاء الأزرار الداخلية للتنقل بين المحتويات"""
         content_data = BotDatabase.read_json(CONTENT_FILE)
         category_content = [item for item in content_data.get("content", []) if item.get("category_id") == category_id]
         
         if not category_content:
-            return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data=f"back_to_category_{category_id}")]])
-        
-        current_index = next((i for i, item in enumerate(category_content) if item['id'] == content_id), 0)
-        
-        keyboard_buttons = []
-        
-        if current_index > 0:
-            prev_content = category_content[current_index - 1]
-            keyboard_buttons.append(InlineKeyboardButton("⬅️ السابق", callback_data=f"content_{prev_content['id']}"))
-        
-        keyboard_buttons.append(InlineKeyboardButton("🔙 رجوع", callback_data=f"back_to_category_{category_id}"))
-        
-        if current_index < len(category_content) - 1:
-            next_content = category_content[current_index + 1]
-            keyboard_buttons.append(InlineKeyboardButton("التالي ➡️", callback_data=f"content_{next_content['id']}"))
-        
-        return InlineKeyboardMarkup([keyboard_buttons])
-        
-    @staticmethod
-    def get_content_navigation_keyboard(content_id, category_id):
-        content_data = BotDatabase.read_json(CONTENT_FILE)
-        category_content = [item for item in content_data.get("content", []) if item.get("category_id") == category_id]
-        
-        if not category_content:
-            return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data=f"back_to_category_{category_id}")]])
+            return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data=f"category_{category_id}")]])
         
         current_index = next((i for i, item in enumerate(category_content) if item['id'] == content_id), 0)
         
@@ -239,7 +241,7 @@ class KeyboardManager:
             keyboard_buttons.append(InlineKeyboardButton("⬅️ السابق", callback_data=f"content_{prev_content['id']}"))
         
         # زر الرجوع
-        keyboard_buttons.append(InlineKeyboardButton("🔙 رجوع", callback_data=f"back_to_category_{category_id}"))
+        keyboard_buttons.append(InlineKeyboardButton("🔙 رجوع", callback_data=f"category_{category_id}"))
         
         # زر التالي
         if current_index < len(category_content) - 1:
@@ -248,45 +250,38 @@ class KeyboardManager:
         
         return InlineKeyboardMarkup([keyboard_buttons])
 
-   @staticmethod
-def get_content_navigation_keyboard(content_id, category_id):
-    content_data = BotDatabase.read_json(CONTENT_FILE)
-    category_content = [item for item in content_data.get("content", []) if item.get("category_id") == category_id]
-    
-    if not category_content:
-        return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data=f"back_to_category_{category_id}")]])
-    
-    current_index = next((i for i, item in enumerate(category_content) if item['id'] == content_id), 0)
-    
-    keyboard_buttons = []
-    
-    # زر السابق
-    if current_index > 0:
-        prev_content = category_content[current_index - 1]
-        keyboard_buttons.append(InlineKeyboardButton("⬅️ السابق", callback_data=f"content_{prev_content['id']}"))
-    
-    # زر الرجوع - تم التعديل هنا
-    keyboard_buttons.append(InlineKeyboardButton("🔙 رجوع", callback_data=f"back_to_category_{category_id}"))
-    
-    # زر التالي
-    if current_index < len(category_content) - 1:
-        next_content = category_content[current_index + 1]
-        keyboard_buttons.append(InlineKeyboardButton("التالي ➡️", callback_data=f"content_{next_content['id']}"))
-    
-    return InlineKeyboardMarkup([keyboard_buttons])
-
     @staticmethod
     def get_recent_posts_keyboard():
+        """إرجاع أزرار عادية للمشاركات الأخيرة"""
         content_data = BotDatabase.read_json(CONTENT_FILE)
         all_content = content_data.get("content", [])
         
         # تصفية المحتوى النصي فقط وترتيبه من الأحدث
         text_content = [item for item in all_content if item.get('content_type') == 'text']
-        recent_posts = sorted(text_content, key=lambda x: x.get('created_date', ''), reverse=True)[:7]
+        recent_posts = sorted(text_content, key=lambda x: x.get('created_date', ''), reverse=True)[:5]
         
         keyboard = []
         for post in recent_posts:
             # تقصير العنوان إذا كان طويلاً
+            title = post['title']
+            if len(title) > 30:
+                title = title[:27] + "..."
+            keyboard.append([f"📰 {title}"])
+        
+        keyboard.append(["🏠 الرئيسية"])
+        return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+    @staticmethod
+    def get_recent_posts_inline_keyboard():
+        """إرجاع أزرار داخلية لجميع المشاركات الأخيرة"""
+        content_data = BotDatabase.read_json(CONTENT_FILE)
+        all_content = content_data.get("content", [])
+        
+        text_content = [item for item in all_content if item.get('content_type') == 'text']
+        recent_posts = sorted(text_content, key=lambda x: x.get('created_date', ''), reverse=True)[:7]
+        
+        keyboard = []
+        for post in recent_posts:
             title = post['title']
             if len(title) > 30:
                 title = title[:27] + "..."
@@ -300,57 +295,6 @@ def get_content_navigation_keyboard(content_id, category_id):
         return ReplyKeyboardMarkup([
             ["📋 طلبات الانتظار", "👀 المستخدمين النشطين"],
             ["🗑️ حذف مستخدم", "🏠 الرئيسية"]
-        ], resize_keyboard=True)
-
-    @staticmethod
-    def get_categories_management_keyboard():
-        return ReplyKeyboardMarkup([
-            ["➕ إضافة قسم", "🗑️ حذف قسم"],
-            ["📋 عرض الأقسام", "🏠 الرئيسية"]
-        ], resize_keyboard=True)
-
-    @staticmethod
-    def get_content_management_keyboard():
-        return ReplyKeyboardMarkup([
-            ["➕ إضافة محتوى", "🗑️ حذف محتوى"],
-            ["📋 عرض المحتوى", "🏠 الرئيسية"]
-        ], resize_keyboard=True)
-
-    @staticmethod
-    def get_subscription_management_keyboard():
-        return ReplyKeyboardMarkup([
-            ["🔔 تفعيل/إلغاء", "✏️ تعديل الرسالة"],
-            ["📝 إضافة قناة", "🗑️ حذف قناة"],
-            ["📋 عرض القنوات", "🏠 الرئيسية"]
-        ], resize_keyboard=True)
-
-    @staticmethod
-    def get_settings_keyboard():
-        return ReplyKeyboardMarkup([
-            ["✏️ تعديل رسالة الترحيب", "✏️ تعديل رسالة الرفض"],
-            ["✏️ تعديل رسالة المساعدة", "🔔 تفعيل/إلغاء التحويل"],
-            ["🏠 الرئيسية"]
-        ], resize_keyboard=True)
-
-    @staticmethod
-    def get_broadcast_keyboard():
-        return ReplyKeyboardMarkup([
-            ["📢 بث لجميع المستخدمين", "👤 بث لمستخدم محدد"],
-            ["📋 عرض المستخدمين", "🏠 الرئيسية"]
-        ], resize_keyboard=True)
-
-    @staticmethod
-    def get_backup_keyboard():
-        return ReplyKeyboardMarkup([
-            ["💾 تنزيل نسخة", "🔄 رفع نسخة"],
-            ["📋 عرض النسخ", "🏠 الرئيسية"]
-        ], resize_keyboard=True)
-
-    @staticmethod
-    def get_text_input_keyboard():
-        return ReplyKeyboardMarkup([
-            ["✅ إنهاء وحفظ", "❌ إلغاء الإضافة"],
-            ["🏠 الرئيسية"]
         ], resize_keyboard=True)
 
 def is_admin(user_id):
@@ -516,8 +460,41 @@ async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             "سيتم إعلامك فور الموافقة على طلبك.",
             reply_markup=KeyboardManager.get_waiting_keyboard()
         )
+    elif text == "📋 عرض المزيد":
+        await show_more_content(update, context)
     else:
         await handle_category_selection(update, context, text)
+
+async def show_categories_to_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    content = BotDatabase.read_json(CONTENT_FILE)
+    categories = content.get("categories", [])
+    
+    if not categories:
+        await update.message.reply_text("📭 لا توجد أقسام متاحة حالياً.")
+        return
+    
+    await update.message.reply_text(
+        "📂 الأقسام المتاحة:\nاختر القسم الذي تريد تصفحه:",
+        reply_markup=KeyboardManager.get_categories_keyboard()
+    )
+
+async def show_category_content_list(update: Update, context: ContextTypes.DEFAULT_TYPE, category_id: int):
+    content_data = BotDatabase.read_json(CONTENT_FILE)
+    categories = content_data.get("categories", [])
+    category_content = [item for item in content_data.get("content", []) if item.get("category_id") == category_id]
+    
+    category_name = next((cat['name'] for cat in categories if cat['id'] == category_id), "غير معروف")
+    
+    if not category_content:
+        await update.message.reply_text(f"📭 لا يوجد محتوى في قسم {category_name} حالياً.")
+        return
+    
+    text = f"📂 {category_name}\n\n"
+    text += f"عدد العناصر: {len(category_content)}\n\n"
+    text += "اختر المحتوى الذي تريد مشاهدته:"
+    
+    # استخدام الأزرار العادية بدلاً من الداخلية
+    await update.message.reply_text(text, reply_markup=KeyboardManager.get_category_content_keyboard(category_id))
 
 async def show_recent_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     content_data = BotDatabase.read_json(CONTENT_FILE)
@@ -525,7 +502,7 @@ async def show_recent_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # تصفية المحتوى النصي فقط وترتيبه من الأحدث
     text_content = [item for item in all_content if item.get('content_type') == 'text']
-    recent_posts = sorted(text_content, key=lambda x: x.get('created_date', ''), reverse=True)[:7]
+    recent_posts = sorted(text_content, key=lambda x: x.get('created_date', ''), reverse=True)[:5]
     
     if not recent_posts:
         await update.message.reply_text("📭 لا توجد مشاركات نصية حديثة.")
@@ -534,7 +511,165 @@ async def show_recent_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = "📰 آخر المشاركات النصية:\n\n"
     text += "اختر المشاركة التي تريد قراءتها:"
     
+    # استخدام الأزرار العادية بدلاً من الداخلية
     await update.message.reply_text(text, reply_markup=KeyboardManager.get_recent_posts_keyboard())
+
+async def show_more_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """عرض المزيد من المحتوى باستخدام الأزرار الداخلية"""
+    # هنا يمكنك حفظ معرف القسم في context.user_data لاستخدامه لاحقاً
+    await update.message.reply_text(
+        "📋 جميع المحتويات المتاحة:\nاختر من القائمة أدناه:",
+        reply_markup=KeyboardManager.get_category_content_inline_keyboard(1)  # تحتاج لتعديل هذا ليعتمد على القسم الحالي
+    )
+
+async def handle_category_selection(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+    content = BotDatabase.read_json(CONTENT_FILE)
+    categories = content.get("categories", [])
+    
+    for category in categories:
+        if text == category['name']:
+            await show_category_content_list(update, context, category['id'])
+            return
+    
+    # معالجة أزرار المحتوى (التي تبدأ بـ 📖)
+    if text.startswith("📖 "):
+        content_title = text[2:]  # إزالة الإيموجي
+        content_data = BotDatabase.read_json(CONTENT_FILE)
+        content_item = next((item for item in content_data.get("content", []) if item['title'].startswith(content_title)), None)
+        
+        if content_item:
+            await show_content_item_from_message(update, context, content_item['id'])
+            return
+    
+    # معالجة أزرار المشاركات الأخيرة (التي تبدأ بـ 📰)
+    if text.startswith("📰 "):
+        content_title = text[2:]  # إزالة الإيموجي
+        content_data = BotDatabase.read_json(CONTENT_FILE)
+        content_item = next((item for item in content_data.get("content", []) if item['title'].startswith(content_title)), None)
+        
+        if content_item:
+            await show_content_item_from_message(update, context, content_item['id'])
+            return
+    
+    if is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ لم أفهم طلبك. اختر من القائمة أدناه:", reply_markup=KeyboardManager.get_admin_keyboard())
+    else:
+        await update.message.reply_text("❌ لم أفهم طلبك. اختر من القائمة أدناه:", reply_markup=KeyboardManager.get_user_keyboard())
+
+async def show_content_item_from_message(update: Update, context: ContextTypes.DEFAULT_TYPE, content_id: int):
+    """عرض عنصر محتوى من رسالة عادية (بدون استخدام callback)"""
+    content_data = BotDatabase.read_json(CONTENT_FILE)
+    content_item = next((item for item in content_data.get("content", []) if item['id'] == content_id), None)
+    
+    if not content_item:
+        await update.message.reply_text("❌ المحتوى غير موجود.")
+        return
+    
+    try:
+        if content_item['content_type'] == 'text':
+            # عرض النص البسيط
+            message_text = f"📖 {content_item['title']}\n\n{content_item['text_content']}"
+            
+            # إذا كان النص طويلاً جداً، نقسمه
+            if len(message_text) > 4096:
+                parts = [message_text[i:i+4096] for i in range(0, len(message_text), 4096)]
+                for i, part in enumerate(parts):
+                    await update.message.reply_text(part)
+            else:
+                await update.message.reply_text(message_text)
+            
+        elif content_item['content_type'] == 'photo':
+            await update.message.reply_photo(
+                photo=content_item['file_id'],
+                caption=f"🖼️ {content_item['title']}"
+            )
+            
+        elif content_item['content_type'] == 'video':
+            await update.message.reply_video(
+                video=content_item['file_id'],
+                caption=f"🎬 {content_item['title']}"
+            )
+            
+        elif content_item['content_type'] == 'document':
+            await update.message.reply_document(
+                document=content_item['file_id'],
+                caption=f"📄 {content_item['title']}"
+            )
+            
+    except Exception as e:
+        logger.error(f"Error showing content {content_id}: {e}")
+        await update.message.reply_text(
+            f"📖 {content_item['title']}\n\n{content_item.get('text_content', 'المحتوى غير متوفر')}"
+        )
+async def show_content_item(update: Update, context: ContextTypes.DEFAULT_TYPE, content_id: int):
+    query = update.callback_query
+    await query.answer()
+    
+    content_data = BotDatabase.read_json(CONTENT_FILE)
+    content_item = next((item for item in content_data.get("content", []) if item['id'] == content_id), None)
+    
+    if not content_item:
+        await query.edit_message_text("❌ المحتوى غير موجود.")
+        return
+    
+    category_id = content_item.get('category_id')
+    keyboard = KeyboardManager.get_content_navigation_keyboard(content_id, category_id)
+    
+    try:
+        if content_item['content_type'] == 'text':
+            # عرض النص البسيط
+            message_text = f"📖 {content_item['title']}\n\n{content_item['text_content']}"
+            
+            # إذا كان النص طويلاً جداً، نقسمه
+            if len(message_text) > 4096:
+                parts = [message_text[i:i+4096] for i in range(0, len(message_text), 4096)]
+                for i, part in enumerate(parts):
+                    if i == 0:
+                        await query.edit_message_text(part, reply_markup=keyboard if i == len(parts)-1 else None)
+                    else:
+                        await query.message.reply_text(part, reply_markup=keyboard if i == len(parts)-1 else None)
+            else:
+                await query.edit_message_text(message_text, reply_markup=keyboard)
+            
+        elif content_item['content_type'] == 'photo':
+            # حذف الرسالة القديمة وإرسال صورة جديدة
+            await query.delete_message()
+            await query.message.reply_photo(
+                photo=content_item['file_id'],
+                caption=f"🖼️ {content_item['title']}",
+                reply_markup=keyboard
+            )
+            
+        elif content_item['content_type'] == 'video':
+            await query.delete_message()
+            await query.message.reply_video(
+                video=content_item['file_id'],
+                caption=f"🎬 {content_item['title']}",
+                reply_markup=keyboard
+            )
+            
+        elif content_item['content_type'] == 'document':
+            await query.delete_message()
+            await query.message.reply_document(
+                document=content_item['file_id'],
+                caption=f"📄 {content_item['title']}",
+                reply_markup=keyboard
+            )
+            
+    except Exception as e:
+        logger.error(f"Error showing content {content_id}: {e}")
+        # محاولة بديلة في حالة الخطأ
+        try:
+            await query.edit_message_text(
+                f"📖 {content_item['title']}\n\n{content_item.get('text_content', 'المحتوى غير متوفر')}",
+                reply_markup=keyboard
+            )
+        except Exception as e2:
+            logger.error(f"Alternative method also failed: {e2}")
+            await query.edit_message_text(
+                "❌ تعذر عرض المحتوى. يرجى المحاولة مرة أخرى.",
+                reply_markup=keyboard
+            )
 
 async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
     user_id = update.effective_user.id
@@ -609,8 +744,17 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
         await start_restore_backup(update, context)
     elif text == "📋 عرض النسخ":
         await show_backups(update, context)
+    elif text == "📋 عرض المزيد":
+        await show_more_content_admin(update, context)
     else:
         await handle_category_selection(update, context, text)
+
+async def show_more_content_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """عرض المزيد من المحتوى للمدير"""
+    await update.message.reply_text(
+        "📋 جميع المحتويات المتاحة:\nاختر من القائمة أدناه:",
+        reply_markup=KeyboardManager.get_category_content_inline_keyboard(1)
+    )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -629,120 +773,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_admin_message(update, context, text)
     else:
         await handle_user_message(update, context, text)
-
-async def handle_category_selection(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
-    content = BotDatabase.read_json(CONTENT_FILE)
-    categories = content.get("categories", [])
-    
-    for category in categories:
-        if text == category['name']:
-            await show_category_content_list(update, context, category['id'])
-            return
-    
-    if is_admin(update.effective_user.id):
-        await update.message.reply_text("❌ لم أفهم طلبك. اختر من القائمة أدناه:", reply_markup=KeyboardManager.get_admin_keyboard())
-    else:
-        await update.message.reply_text("❌ لم أفهم طلبك. اختر من القائمة أدناه:", reply_markup=KeyboardManager.get_user_keyboard())
-
-async def show_categories_to_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    content = BotDatabase.read_json(CONTENT_FILE)
-    categories = content.get("categories", [])
-    
-    if not categories:
-        await update.message.reply_text("📭 لا توجد أقسام متاحة حالياً.")
-        return
-    
-    await update.message.reply_text(
-        "📂 الأقسام المتاحة:\nاختر القسم الذي تريد تصفحه:",
-        reply_markup=KeyboardManager.get_categories_keyboard()
-    )
-
-async def show_category_content_list(update: Update, context: ContextTypes.DEFAULT_TYPE, category_id: int):
-    content_data = BotDatabase.read_json(CONTENT_FILE)
-    categories = content_data.get("categories", [])
-    category_content = [item for item in content_data.get("content", []) if item.get("category_id") == category_id]
-    
-    category_name = next((cat['name'] for cat in categories if cat['id'] == category_id), "غير معروف")
-    
-    if not category_content:
-        await update.message.reply_text(f"📭 لا يوجد محتوى في قسم {category_name} حالياً.")
-        return
-    
-    text = f"📂 {category_name}\n\n"
-    text += f"عدد العناصر: {len(category_content)}\n\n"
-    text += "اختر المحتوى الذي تريد مشاهدته:"
-    
-    await update.message.reply_text(text, reply_markup=KeyboardManager.get_category_content_keyboard(category_id))
-
-async def show_content_item(update: Update, context: ContextTypes.DEFAULT_TYPE, content_id: int):
-    query = update.callback_query
-    await query.answer()
-    
-    content_data = BotDatabase.read_json(CONTENT_FILE)
-    content_item = next((item for item in content_data.get("content", []) if item['id'] == content_id), None)
-    
-    if not content_item:
-        await query.edit_message_text("❌ المحتوى غير موجود.")
-        return
-    
-    category_id = content_item.get('category_id')
-    keyboard = KeyboardManager.get_content_navigation_keyboard(content_id, category_id)
-    
-    try:
-        if content_item['content_type'] == 'text':
-            # عرض النص البسيط
-            message_text = f"📖 {content_item['title']}\n\n{content_item['text_content']}"
-            
-            # إذا كان النص طويلاً جداً، نقسمه
-            if len(message_text) > 4096:
-                parts = [message_text[i:i+4096] for i in range(0, len(message_text), 4096)]
-                for i, part in enumerate(parts):
-                    if i == 0:
-                        await query.edit_message_text(part, reply_markup=keyboard if i == len(parts)-1 else None)
-                    else:
-                        await query.message.reply_text(part, reply_markup=keyboard if i == len(parts)-1 else None)
-            else:
-                await query.edit_message_text(message_text, reply_markup=keyboard)
-            
-        elif content_item['content_type'] == 'photo':
-            # حذف الرسالة القديمة وإرسال صورة جديدة
-            await query.delete_message()
-            await query.message.reply_photo(
-                photo=content_item['file_id'],
-                caption=f"🖼️ {content_item['title']}",
-                reply_markup=keyboard
-            )
-            
-        elif content_item['content_type'] == 'video':
-            await query.delete_message()
-            await query.message.reply_video(
-                video=content_item['file_id'],
-                caption=f"🎬 {content_item['title']}",
-                reply_markup=keyboard
-            )
-            
-        elif content_item['content_type'] == 'document':
-            await query.delete_message()
-            await query.message.reply_document(
-                document=content_item['file_id'],
-                caption=f"📄 {content_item['title']}",
-                reply_markup=keyboard
-            )
-            
-    except Exception as e:
-        logger.error(f"Error showing content {content_id}: {e}")
-        # محاولة بديلة في حالة الخطأ
-        try:
-            await query.edit_message_text(
-                f"📖 {content_item['title']}\n\n{content_item.get('text_content', 'المحتوى غير متوفر')}",
-                reply_markup=keyboard
-            )
-        except Exception as e2:
-            logger.error(f"Alternative method also failed: {e2}")
-            await query.edit_message_text(
-                "❌ تعذر عرض المحتوى. يرجى المحاولة مرة أخرى.",
-                reply_markup=keyboard
-            )
 
 async def show_admin_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     users = BotDatabase.read_json(USERS_FILE)
@@ -874,6 +904,259 @@ async def show_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     
     await update.message.reply_text(text)
+
+class KeyboardManager:
+    @staticmethod
+    def get_user_keyboard():
+        return ReplyKeyboardMarkup([
+            ["📂 تصفح الأقسام", "📰 آخر المشاركات"],
+            ["ℹ️ المساعدة"]
+        ], resize_keyboard=True)
+
+    @staticmethod
+    def get_admin_keyboard():
+        return ReplyKeyboardMarkup([
+            ["👑 لوحة التحكم", "📊 الإحصائيات"],
+            ["👥 إدارة المستخدمين", "📢 الاشتراك الإجباري"],
+            ["📝 إدارة الأقسام", "🎭 إدارة المحتوى"],
+            ["⚙️ الإعدادات العامة", "📤 البث للمستخدمين"],
+            ["💾 النسخ الاحتياطي"]
+        ], resize_keyboard=True)
+
+    @staticmethod
+    def get_waiting_keyboard():
+        return ReplyKeyboardMarkup([["⏳ انتظر الموافقة"]], resize_keyboard=True)
+
+    @staticmethod
+    def get_back_keyboard():
+        return ReplyKeyboardMarkup([["🏠 الرئيسية"]], resize_keyboard=True)
+
+    @staticmethod
+    def get_categories_keyboard():
+        content = BotDatabase.read_json(CONTENT_FILE)
+        categories = content.get("categories", [])
+        
+        keyboard = []
+        for category in categories:
+            keyboard.append([category['name']])
+        
+        keyboard.append(["🏠 الرئيسية"])
+        return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+    @staticmethod
+    def get_category_content_keyboard(category_id):
+        """إرجاع أزرار عادية لمحتوى القسم بدلاً من أزرار داخلية"""
+        content_data = BotDatabase.read_json(CONTENT_FILE)
+        category_content = [item for item in content_data.get("content", []) if item.get("category_id") == category_id]
+        
+        keyboard = []
+        # عرض أول 5 عناصر فقط لتجنب ازدحام الكيبورد
+        for item in category_content[:5]:
+            # تقصير العنوان إذا كان طويلاً
+            title = item['title']
+            if len(title) > 30:
+                title = title[:27] + "..."
+            keyboard.append([f"📖 {title}"])
+        
+        # إذا كان هناك أكثر من 5 عناصر، أضف زر "عرض المزيد"
+        if len(category_content) > 5:
+            keyboard.append(["📋 عرض المزيد"])
+        
+        keyboard.append(["🔙 رجوع للأقسام", "🏠 الرئيسية"])
+        return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+    @staticmethod
+    def get_category_content_inline_keyboard(category_id):
+        """إرجاع أزرار داخلية لجميع محتويات القسم (لخيار عرض المزيد)"""
+        content_data = BotDatabase.read_json(CONTENT_FILE)
+        category_content = [item for item in content_data.get("content", []) if item.get("category_id") == category_id]
+        
+        keyboard = []
+        for item in category_content:
+            title = item['title']
+            if len(title) > 30:
+                title = title[:27] + "..."
+            keyboard.append([InlineKeyboardButton(f"📖 {title}", callback_data=f"content_{item['id']}")])
+        
+        keyboard.append([InlineKeyboardButton("🔙 رجوع للأقسام", callback_data="back_to_categories")])
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def get_content_navigation_keyboard(content_id, category_id):
+        """إبقاء الأزرار الداخلية للتنقل بين المحتويات"""
+        content_data = BotDatabase.read_json(CONTENT_FILE)
+        category_content = [item for item in content_data.get("content", []) if item.get("category_id") == category_id]
+        
+        if not category_content:
+            return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data=f"category_{category_id}")]])
+        
+        current_index = next((i for i, item in enumerate(category_content) if item['id'] == content_id), 0)
+        
+        keyboard_buttons = []
+        
+        # زر السابق
+        if current_index > 0:
+            prev_content = category_content[current_index - 1]
+            keyboard_buttons.append(InlineKeyboardButton("⬅️ السابق", callback_data=f"content_{prev_content['id']}"))
+        
+        # زر الرجوع
+        keyboard_buttons.append(InlineKeyboardButton("🔙 رجوع", callback_data=f"category_{category_id}"))
+        
+        # زر التالي
+        if current_index < len(category_content) - 1:
+            next_content = category_content[current_index + 1]
+            keyboard_buttons.append(InlineKeyboardButton("التالي ➡️", callback_data=f"content_{next_content['id']}"))
+        
+        return InlineKeyboardMarkup([keyboard_buttons])
+
+    @staticmethod
+    def get_recent_posts_keyboard():
+        """إرجاع أزرار عادية للمشاركات الأخيرة"""
+        content_data = BotDatabase.read_json(CONTENT_FILE)
+        all_content = content_data.get("content", [])
+        
+        # تصفية المحتوى النصي فقط وترتيبه من الأحدث
+        text_content = [item for item in all_content if item.get('content_type') == 'text']
+        recent_posts = sorted(text_content, key=lambda x: x.get('created_date', ''), reverse=True)[:5]
+        
+        keyboard = []
+        for post in recent_posts:
+            # تقصير العنوان إذا كان طويلاً
+            title = post['title']
+            if len(title) > 30:
+                title = title[:27] + "..."
+            keyboard.append([f"📰 {title}"])
+        
+        keyboard.append(["🏠 الرئيسية"])
+        return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+    @staticmethod
+    def get_recent_posts_inline_keyboard():
+        """إرجاع أزرار داخلية لجميع المشاركات الأخيرة"""
+        content_data = BotDatabase.read_json(CONTENT_FILE)
+        all_content = content_data.get("content", [])
+        
+        text_content = [item for item in all_content if item.get('content_type') == 'text']
+        recent_posts = sorted(text_content, key=lambda x: x.get('created_date', ''), reverse=True)[:7]
+        
+        keyboard = []
+        for post in recent_posts:
+            title = post['title']
+            if len(title) > 30:
+                title = title[:27] + "..."
+            keyboard.append([InlineKeyboardButton(title, callback_data=f"content_{post['id']}")])
+        
+        keyboard.append([InlineKeyboardButton("🔙 رجوع للرئيسية", callback_data="back_to_main")])
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def get_user_management_keyboard():
+        return ReplyKeyboardMarkup([
+            ["📋 طلبات الانتظار", "👀 المستخدمين النشطين"],
+            ["🗑️ حذف مستخدم", "🏠 الرئيسية"]
+        ], resize_keyboard=True)
+
+    @staticmethod
+    def get_categories_management_keyboard():
+        return ReplyKeyboardMarkup([
+            ["➕ إضافة قسم", "🗑️ حذف قسم"],
+            ["📋 عرض الأقسام", "🏠 الرئيسية"]
+        ], resize_keyboard=True)
+
+    @staticmethod
+    def get_content_management_keyboard():
+        return ReplyKeyboardMarkup([
+            ["➕ إضافة محتوى", "🗑️ حذف محتوى"],
+            ["📋 عرض المحتوى", "🏠 الرئيسية"]
+        ], resize_keyboard=True)
+
+    @staticmethod
+    def get_subscription_management_keyboard():
+        return ReplyKeyboardMarkup([
+            ["🔔 تفعيل/إلغاء", "✏️ تعديل الرسالة"],
+            ["📝 إضافة قناة", "🗑️ حذف قناة"],
+            ["📋 عرض القنوات", "🏠 الرئيسية"]
+        ], resize_keyboard=True)
+
+    @staticmethod
+    def get_settings_keyboard():
+        return ReplyKeyboardMarkup([
+            ["✏️ تعديل رسالة الترحيب", "✏️ تعديل رسالة الرفض"],
+            ["✏️ تعديل رسالة المساعدة", "🔔 تفعيل/إلغاء التحويل"],
+            ["🏠 الرئيسية"]
+        ], resize_keyboard=True)
+
+    @staticmethod
+    def get_broadcast_keyboard():
+        return ReplyKeyboardMarkup([
+            ["📢 بث لجميع المستخدمين", "👤 بث لمستخدم محدد"],
+            ["📋 عرض المستخدمين", "🏠 الرئيسية"]
+        ], resize_keyboard=True)
+
+    @staticmethod
+    def get_backup_keyboard():
+        return ReplyKeyboardMarkup([
+            ["💾 تنزيل نسخة", "🔄 رفع نسخة"],
+            ["📋 عرض النسخ", "🏠 الرئيسية"]
+        ], resize_keyboard=True)
+
+    @staticmethod
+    def get_text_input_keyboard():
+        return ReplyKeyboardMarkup([
+            ["✅ إنهاء وحفظ", "❌ إلغاء الإضافة"],
+            ["🏠 الرئيسية"]
+        ], resize_keyboard=True)
+    
+    @staticmethod
+    def get_categories_management_keyboard():
+        return ReplyKeyboardMarkup([
+            ["➕ إضافة قسم", "🗑️ حذف قسم"],
+            ["📋 عرض الأقسام", "🏠 الرئيسية"]
+        ], resize_keyboard=True)
+
+    @staticmethod
+    def get_content_management_keyboard():
+        return ReplyKeyboardMarkup([
+            ["➕ إضافة محتوى", "🗑️ حذف محتوى"],
+            ["📋 عرض المحتوى", "🏠 الرئيسية"]
+        ], resize_keyboard=True)
+
+    @staticmethod
+    def get_subscription_management_keyboard():
+        return ReplyKeyboardMarkup([
+            ["🔔 تفعيل/إلغاء", "✏️ تعديل الرسالة"],
+            ["📝 إضافة قناة", "🗑️ حذف قناة"],
+            ["📋 عرض القنوات", "🏠 الرئيسية"]
+        ], resize_keyboard=True)
+
+    @staticmethod
+    def get_settings_keyboard():
+        return ReplyKeyboardMarkup([
+            ["✏️ تعديل رسالة الترحيب", "✏️ تعديل رسالة الرفض"],
+            ["✏️ تعديل رسالة المساعدة", "🔔 تفعيل/إلغاء التحويل"],
+            ["🏠 الرئيسية"]
+        ], resize_keyboard=True)
+
+    @staticmethod
+    def get_broadcast_keyboard():
+        return ReplyKeyboardMarkup([
+            ["📢 بث لجميع المستخدمين", "👤 بث لمستخدم محدد"],
+            ["📋 عرض المستخدمين", "🏠 الرئيسية"]
+        ], resize_keyboard=True)
+
+    @staticmethod
+    def get_backup_keyboard():
+        return ReplyKeyboardMarkup([
+            ["💾 تنزيل نسخة", "🔄 رفع نسخة"],
+            ["📋 عرض النسخ", "🏠 الرئيسية"]
+        ], resize_keyboard=True)
+
+    @staticmethod
+    def get_text_input_keyboard():
+        return ReplyKeyboardMarkup([
+            ["✅ إنهاء وحفظ", "❌ إلغاء الإضافة"],
+            ["🏠 الرئيسية"]
+        ], resize_keyboard=True)
 
 async def show_categories_management(update: Update, context: ContextTypes.DEFAULT_TYPE):
     content = BotDatabase.read_json(CONTENT_FILE)
@@ -1697,9 +1980,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("category_"):
         category_id = int(data.split("_")[1])
         await show_category_content_list(update, context, category_id)
-    elif data.startswith("back_to_category_"):  # أضف هذا السطر
-        category_id = int(data.split("_")[3])  # back_to_category_{category_id}
-        await show_category_content_list(update, context, category_id)
     elif data == "back_to_categories":
         await show_categories_to_user(update, context)
     elif data == "back_to_main":
@@ -1718,10 +1998,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await reject_user_callback(update, context, target_user)
     elif data == "view_requests":
         await show_pending_requests(update, context)
-    elif data.startswith("back_to_category_"):
-    category_id = int(data.split("_")[3])
-    await show_category_content_list(update, context, category_id)
-    
+
 async def accept_user_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, target_user_id: str):
     users = BotDatabase.read_json(USERS_FILE)
     
