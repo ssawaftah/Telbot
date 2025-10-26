@@ -267,6 +267,13 @@ class KeyboardManager:
             ["📋 عرض النسخ", "🏠 الرئيسية"]
         ], resize_keyboard=True)
 
+    @staticmethod
+    def get_text_input_keyboard():
+        return ReplyKeyboardMarkup([
+            ["✅ إنهاء وحفظ", "❌ إلغاء الإضافة"],
+            ["🏠 الرئيسية"]
+        ], resize_keyboard=True)
+
 def is_admin(user_id):
     return str(user_id) in [str(admin_id) for admin_id in ADMIN_IDS]
 
@@ -869,11 +876,15 @@ async def add_content_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['content_type'] = selected_type
     
     if selected_type == "text":
+        # بدء تجميع النص
+        context.user_data['content_text'] = ""
+        context.user_data['text_parts'] = []
+        
         await update.message.reply_text(
-            "أرسل النص الذي تريد إضافته:\n\n"
+            "📝 أضف المحتوى النصي\n\n"
             "يمكنك إرسال النص على عدة رسائل\n"
-            "وعند الانتهاء اكتب /done لحفظ المحتوى",
-            reply_markup=ReplyKeyboardMarkup([["/done"], ["🏠 الرئيسية"]], resize_keyboard=True)
+            "وعند الانتهاء اضغط على زر '✅ إنهاء وحفظ'",
+            reply_markup=KeyboardManager.get_text_input_keyboard()
         )
         return ADD_CONTENT_TEXT
     else:
@@ -884,14 +895,21 @@ async def add_content_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ADD_CONTENT_FILE
 
 async def add_content_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.text == '/done':
+    user_input = update.message.text
+    
+    # معالجة الأزرار
+    if user_input == "✅ إنهاء وحفظ":
         text_content = context.user_data.get('content_text', '')
         if not text_content:
-            await update.message.reply_text("❌ لم يتم إضافة أي نص. الرجاء إرسال النص أولاً.")
+            await update.message.reply_text(
+                "❌ لم يتم إضافة أي نص. الرجاء إرسال النص أولاً.",
+                reply_markup=KeyboardManager.get_text_input_keyboard()
+            )
             return ADD_CONTENT_TEXT
         
         context.user_data['text_content'] = text_content
         
+        # الانتقال لاختيار القسم
         content_data = BotDatabase.read_json(CONTENT_FILE)
         categories = content_data.get("categories", [])
         
@@ -903,7 +921,9 @@ async def add_content_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return ConversationHandler.END
         
         text = "✅ تم حفظ النص بنجاح!\n\n"
+        text += f"عدد الأحرف: {len(text_content)}\n"
         text += "اختر القسم لإضافة المحتوى:\n\n"
+        
         keyboard_buttons = []
         for cat in categories:
             text += f"• {cat['icon']} {cat['name']} (ID: {cat['id']})\n"
@@ -914,22 +934,43 @@ async def add_content_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await update.message.reply_text(text, reply_markup=keyboard)
         return ADD_CONTENT_CATEGORY
+    
+    elif user_input == "❌ إلغاء الإضافة":
+        # تنظيف البيانات المؤقتة
+        if 'content_text' in context.user_data:
+            del context.user_data['content_text']
+        if 'text_parts' in context.user_data:
+            del context.user_data['text_parts']
+        
+        await update.message.reply_text(
+            "❌ تم إلغاء إضافة المحتوى.",
+            reply_markup=KeyboardManager.get_admin_keyboard()
+        )
+        return ConversationHandler.END
+    
     else:
+        # إضافة النص إلى المحتوى
         current_text = context.user_data.get('content_text', '')
-        new_text = update.message.text
+        new_text = user_input
         
         if current_text:
             context.user_data['content_text'] = current_text + "\n\n" + new_text
         else:
             context.user_data['content_text'] = new_text
         
+        # حفظ الأجزاء للمراجعة
+        if 'text_parts' not in context.user_data:
+            context.user_data['text_parts'] = []
+        context.user_data['text_parts'].append(new_text)
+        
         text_length = len(context.user_data['content_text'])
+        parts_count = len(context.user_data['text_parts'])
         
         await update.message.reply_text(
-            f"✅ تم إضافة الجزء النصي.\n"
+            f"✅ تم إضافة الجزء النصي ({parts_count}).\n"
             f"إجمالي النص: {text_length} حرف\n\n"
-            "يمكنك إرسال المزيد من النص أو اكتب /done لحفظ المحتوى",
-            reply_markup=ReplyKeyboardMarkup([["/done"], ["🏠 الرئيسية"]], resize_keyboard=True)
+            "يمكنك إرسال المزيد من النص أو اضغط على '✅ إنهاء وحفظ' لحفظ المحتوى",
+            reply_markup=KeyboardManager.get_text_input_keyboard()
         )
         return ADD_CONTENT_TEXT
 
@@ -977,7 +1018,12 @@ async def add_content_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def add_content_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        category_id = int(update.message.text.replace("القسم ", ""))
+        # استخراج رقم القسم من النص
+        user_input = update.message.text
+        if user_input.startswith("القسم "):
+            category_id = int(user_input.replace("القسم ", ""))
+        else:
+            category_id = int(user_input)
         
         content_data = BotDatabase.read_json(CONTENT_FILE)
         categories = content_data.get("categories", [])
@@ -987,6 +1033,7 @@ async def add_content_category(update: Update, context: ContextTypes.DEFAULT_TYP
             await update.message.reply_text("❌ القسم غير موجود.")
             return ConversationHandler.END
         
+        # إنشاء المحتوى الجديد
         new_content = {
             "id": max([item.get('id', 0) for item in content_data.get('content', [])] or [0]) + 1,
             "title": context.user_data['content_title'],
@@ -997,14 +1044,22 @@ async def add_content_category(update: Update, context: ContextTypes.DEFAULT_TYP
             "created_date": datetime.now().isoformat()
         }
         
+        # إضافة المحتوى
         content_data["content"].append(new_content)
         BotDatabase.write_json(CONTENT_FILE, content_data)
         
+        # تنظيف البيانات المؤقتة
+        if 'content_text' in context.user_data:
+            del context.user_data['content_text']
+        if 'text_parts' in context.user_data:
+            del context.user_data['text_parts']
+        
         await update.message.reply_text(
             f"✅ تم إضافة المحتوى بنجاح!\n\n"
-            f"العنوان: {new_content['title']}\n"
-            f"النوع: {new_content['content_type']}\n"
-            f"القسم: {category_id}",
+            f"📖 العنوان: {new_content['title']}\n"
+            f"🎯 النوع: {new_content['content_type']}\n"
+            f"📂 القسم: {category_id}\n"
+            f"📊 عدد الأحرف: {len(new_content['text_content']) if new_content['content_type'] == 'text' else 'N/A'}",
             reply_markup=KeyboardManager.get_admin_keyboard()
         )
         
