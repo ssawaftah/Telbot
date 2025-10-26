@@ -42,13 +42,16 @@ class BotDatabase:
         default_data = {
             USERS_FILE: {},
             CONTENT_FILE: {
-                "categories": [],
+                "categories": [
+                    {"id": 1, "name": "القسم الأول", "icon": "📚", "created_date": datetime.now().isoformat()},
+                    {"id": 2, "name": "القسم الثاني", "icon": "🎨", "created_date": datetime.now().isoformat()}
+                ],
                 "content": []
             },
             SETTINGS_FILE: {
                 "subscription": {
                     "enabled": False,
-                    "channels": [],
+                    "channels": ["@channel_username"],
                     "message": "📢 يجب الاشتراك في القناة أولاً لتتمكن من استخدام البوت"
                 },
                 "responses": {
@@ -427,7 +430,11 @@ async def handle_category_selection(update: Update, context: ContextTypes.DEFAUL
             await show_category_content(update, context, category['id'])
             return
     
-    await update.message.reply_text("❌ لم أفهم طلبك. اختر من القائمة أدناه:")
+    # إذا لم يكن اختيار قسم، عرض القائمة المناسبة
+    if is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ لم أفهم طلبك. اختر من القائمة أدناه:", reply_markup=KeyboardManager.get_admin_keyboard())
+    else:
+        await update.message.reply_text("❌ لم أفهم طلبك. اختر من القائمة أدناه:", reply_markup=KeyboardManager.get_user_keyboard())
 
 async def show_categories_to_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     content = BotDatabase.read_json(CONTENT_FILE)
@@ -1401,7 +1408,7 @@ def main():
             ADD_CONTENT_TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_content_title)],
             ADD_CONTENT_TYPE: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_content_type)],
             ADD_CONTENT_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_content_text)],
-            ADD_CONTENT_FILE: [MessageHandler(filters.PHOTO | filters.VIDEO | filters.DOCUMENT | filters.TEXT, add_content_file)],
+            ADD_CONTENT_FILE: [MessageHandler(filters.PHOTO | filters.VIDEO | filters.Document.ALL, add_content_file)],
             ADD_CONTENT_CATEGORY: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_content_category)],
         },
         fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
