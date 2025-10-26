@@ -368,14 +368,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     reply_markup=KeyboardManager.get_admin_keyboard()
                 )
             else:
-                await update.message.reply_text(
-    f"*مرحباً بعودتك يا {update.effective_user.first_name}! 👋*\n"
+               await update.message.reply_text( f"*مرحباً بعودتك يا {update.effective_user.first_name}! 👋*\n"
     "_يسرّنا رؤيتك مجدداً._\n\n"
     "⬇️ *اختر أحد الأقسام أدناه للمتابعة:*",
-    reply_markup=KeyboardManager.get_user_keyboard()
-                    parse_mode="Markdown"
-)
-
+               reply_markup=KeyboardManager.get_user_keyboard()
+               parse_mode='Markdown'
                 )
         else:
             # المستخدم غير مفعل
