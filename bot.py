@@ -197,23 +197,27 @@ class KeyboardManager:
         content_data = BotDatabase.read_json(CONTENT_FILE)
         category_content = [item for item in content_data.get("content", []) if item.get("category_id") == category_id]
         
+        if not category_content:
+            return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data=f"category_{category_id}")]])
+        
         current_index = next((i for i, item in enumerate(category_content) if item['id'] == content_id), 0)
         
-        keyboard = []
-        nav_buttons = []
+        keyboard_buttons = []
         
+        # زر السابق
         if current_index > 0:
             prev_content = category_content[current_index - 1]
-            nav_buttons.append(InlineKeyboardButton("⬅️ السابق", callback_data=f"content_{prev_content['id']}"))
+            keyboard_buttons.append(InlineKeyboardButton("⬅️ السابق", callback_data=f"content_{prev_content['id']}"))
         
-        nav_buttons.append(InlineKeyboardButton("🔙 رجوع", callback_data=f"category_{category_id}"))
+        # زر الرجوع
+        keyboard_buttons.append(InlineKeyboardButton("🔙 رجوع", callback_data=f"category_{category_id}"))
         
+        # زر التالي
         if current_index < len(category_content) - 1:
             next_content = category_content[current_index + 1]
-            nav_buttons.append(InlineKeyboardButton("التالي ➡️", callback_data=f"content_{next_content['id']}"))
+            keyboard_buttons.append(InlineKeyboardButton("التالي ➡️", callback_data=f"content_{next_content['id']}"))
         
-        keyboard.append(nav_buttons)
-        return InlineKeyboardMarkup(keyboard)
+        return InlineKeyboardMarkup([keyboard_buttons])
 
     @staticmethod
     def get_user_management_keyboard():
@@ -520,37 +524,63 @@ async def show_content_item(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         return
     
     category_id = content_item.get('category_id')
+    keyboard = KeyboardManager.get_content_navigation_keyboard(content_id, category_id)
     
     try:
         if content_item['content_type'] == 'text':
-            await query.edit_message_text(
-                f"📖 {content_item['title']}\n\n{content_item['text_content']}",
-                reply_markup=KeyboardManager.get_content_navigation_keyboard(content_id, category_id)
-            )
+            # عرض النص البسيط
+            message_text = f"📖 {content_item['title']}\n\n{content_item['text_content']}"
+            
+            # إذا كان النص طويلاً جداً، نقسمه
+            if len(message_text) > 4096:
+                parts = [message_text[i:i+4096] for i in range(0, len(message_text), 4096)]
+                for i, part in enumerate(parts):
+                    if i == 0:
+                        await query.edit_message_text(part, reply_markup=keyboard if i == len(parts)-1 else None)
+                    else:
+                        await query.message.reply_text(part, reply_markup=keyboard if i == len(parts)-1 else None)
+            else:
+                await query.edit_message_text(message_text, reply_markup=keyboard)
+            
         elif content_item['content_type'] == 'photo':
+            # حذف الرسالة القديمة وإرسال صورة جديدة
+            await query.delete_message()
             await query.message.reply_photo(
                 photo=content_item['file_id'],
                 caption=f"🖼️ {content_item['title']}",
-                reply_markup=KeyboardManager.get_content_navigation_keyboard(content_id, category_id)
+                reply_markup=keyboard
             )
-            await query.delete_message()
+            
         elif content_item['content_type'] == 'video':
+            await query.delete_message()
             await query.message.reply_video(
                 video=content_item['file_id'],
                 caption=f"🎬 {content_item['title']}",
-                reply_markup=KeyboardManager.get_content_navigation_keyboard(content_id, category_id)
+                reply_markup=keyboard
             )
-            await query.delete_message()
+            
         elif content_item['content_type'] == 'document':
+            await query.delete_message()
             await query.message.reply_document(
                 document=content_item['file_id'],
                 caption=f"📄 {content_item['title']}",
-                reply_markup=KeyboardManager.get_content_navigation_keyboard(content_id, category_id)
+                reply_markup=keyboard
             )
-            await query.delete_message()
+            
     except Exception as e:
-        logger.error(f"Error showing content: {e}")
-        await query.edit_message_text("❌ حدث خطأ في عرض المحتوى.")
+        logger.error(f"Error showing content {content_id}: {e}")
+        # محاولة بديلة في حالة الخطأ
+        try:
+            await query.edit_message_text(
+                f"📖 {content_item['title']}\n\n{content_item.get('text_content', 'المحتوى غير متوفر')}",
+                reply_markup=keyboard
+            )
+        except Exception as e2:
+            logger.error(f"Alternative method also failed: {e2}")
+            await query.edit_message_text(
+                "❌ تعذر عرض المحتوى. يرجى المحاولة مرة أخرى.",
+                reply_markup=keyboard
+            )
 
 async def show_user_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
