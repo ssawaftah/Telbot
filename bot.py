@@ -150,7 +150,7 @@ class KeyboardManager:
     @staticmethod
     def get_user_keyboard():
         return ReplyKeyboardMarkup([
-            ["📂 تصفح الأقسام", "👤 ملفي الشخصي"],
+            ["📂 تصفح الأقسام", "📰 آخر المشاركات"],
             ["ℹ️ المساعدة"]
         ], resize_keyboard=True)
 
@@ -266,7 +266,7 @@ class KeyboardManager:
     @staticmethod
     def get_backup_keyboard():
         return ReplyKeyboardMarkup([
-            ["💾 إنشاء نسخة احتياطية", "🔄 استعادة نسخة"],
+            ["💾 تنزيل نسخة", "🔄 رفع نسخة"],
             ["📋 عرض النسخ", "🏠 الرئيسية"]
         ], resize_keyboard=True)
 
@@ -365,8 +365,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
     if text == "📂 تصفح الأقسام":
         await show_categories_to_user(update, context)
-    elif text == "👤 ملفي الشخصي":
-        await show_user_profile(update, context)
+    elif text == "📰 آخر المشاركات":
+        await show_recent_posts(update, context)
     elif text == "ℹ️ المساعدة":
         await update.message.reply_text(BotDatabase.get_setting("responses.help"))
     elif text == "✅ تحقق من الاشتراك":
@@ -386,6 +386,38 @@ async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("🏠 العودة للرئيسية", reply_markup=KeyboardManager.get_user_keyboard())
     else:
         await handle_category_selection(update, context, text)
+
+async def show_recent_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    content_data = BotDatabase.read_json(CONTENT_FILE)
+    all_content = content_data.get("content", [])
+    
+    # تصفية المحتوى النصي فقط وترتيبه من الأحدث
+    text_content = [item for item in all_content if item.get('content_type') == 'text']
+    recent_posts = sorted(text_content, key=lambda x: x.get('created_date', ''), reverse=True)[:7]
+    
+    if not recent_posts:
+        await update.message.reply_text("📭 لا توجد مشاركات نصية حديثة.")
+        return
+    
+    text = "📰 آخر المشاركات النصية:\n\n"
+    
+    for i, post in enumerate(recent_posts, 1):
+        # الحصول على اسم القسم
+        category_name = "غير معروف"
+        for cat in content_data.get("categories", []):
+            if cat['id'] == post.get('category_id'):
+                category_name = cat['name']
+                break
+        
+        # عرض جزء من النص (أول 100 حرف)
+        preview = post.get('text_content', '')[:100] + "..." if len(post.get('text_content', '')) > 100 else post.get('text_content', '')
+        
+        text += f"{i}. **{post['title']}**\n"
+        text += f"   📂 القسم: {category_name}\n"
+        text += f"   📝 {preview}\n"
+        text += f"   📅 {post.get('created_date', '')[:10]}\n\n"
+    
+    await update.message.reply_text(text, reply_markup=KeyboardManager.get_user_keyboard())
 
 async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
     if text == "👑 لوحة التحكم":
@@ -408,6 +440,8 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
         await show_backup_management(update, context)
     elif text == "📂 تصفح الأقسام":
         await show_categories_to_user(update, context)
+    elif text == "📰 آخر المشاركات":
+        await show_recent_posts(update, context)
     elif text == "🏠 الرئيسية":
         await update.message.reply_text("🏠 العودة للرئيسية", reply_markup=KeyboardManager.get_admin_keyboard())
     elif text == "📋 طلبات الانتظار":
@@ -450,9 +484,9 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
         await start_broadcast(update, context)
     elif text == "👤 بث لمستخدم محدد":
         await start_send_to_user(update, context)
-    elif text == "💾 إنشاء نسخة احتياطية":
-        await create_backup(update, context)
-    elif text == "🔄 استعادة نسخة":
+    elif text == "💾 تنزيل نسخة":
+        await download_backup(update, context)
+    elif text == "🔄 رفع نسخة":
         await start_restore_backup(update, context)
     elif text == "📋 عرض النسخ":
         await show_backups(update, context)
@@ -581,25 +615,6 @@ async def show_content_item(update: Update, context: ContextTypes.DEFAULT_TYPE, 
                 "❌ تعذر عرض المحتوى. يرجى المحاولة مرة أخرى.",
                 reply_markup=keyboard
             )
-
-async def show_user_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    users = BotDatabase.read_json(USERS_FILE)
-    user_key = str(user_id)
-    
-    if user_key in users:
-        user_data = users[user_key]
-        text = (
-            f"👤 ملفك الشخصي\n\n"
-            f"• الاسم: {user_data['first_name']}\n"
-            f"• المعرف: @{user_data.get('username', 'غير متوفر')}\n"
-            f"• تاريخ الانضمام: {user_data['join_date'][:10]}\n"
-            f"• الحالة: {'✅ مفعل' if user_data.get('approved', False) else '⏳ قيد المراجعة'}"
-        )
-    else:
-        text = "❌ لم يتم العثور على بياناتك."
-    
-    await update.message.reply_text(text)
 
 async def show_admin_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     users = BotDatabase.read_json(USERS_FILE)
@@ -1404,90 +1419,134 @@ async def send_to_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def show_backup_management(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "💾 النسخ الاحتياطي\n\n"
-        "يمكنك من هنا إنشاء نسخ احتياطية من بيانات البوت أو استعادة نسخ سابقة.\n\n"
+        "يمكنك من هنا تنزيل نسخة احتياطية من بيانات البوت أو رفع نسخة سابقة.\n\n"
         "اختر الإجراء:"
     )
     
     await update.message.reply_text(text, reply_markup=KeyboardManager.get_backup_keyboard())
 
-async def create_backup(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    backup_data = {
-        "users": BotDatabase.read_json(USERS_FILE),
-        "content": BotDatabase.read_json(CONTENT_FILE),
-        "settings": BotDatabase.read_json(SETTINGS_FILE),
-        "backup_date": datetime.now().isoformat()
-    }
-    backup_file = os.path.join(DATA_DIR, f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
-    with open(backup_file, 'w', encoding='utf-8') as f:
-        json.dump(backup_data, f, ensure_ascii=False, indent=2)
-    
-    await update.message.reply_text(
-        f"✅ تم إنشاء نسخة احتياطية بنجاح!\n"
-        f"الملف: {os.path.basename(backup_file)}",
-        reply_markup=KeyboardManager.get_backup_keyboard()
-    )
+async def download_backup(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """إنشاء وتنزيل نسخة احتياطية"""
+    try:
+        # إنشاء بيانات النسخة الاحتياطية
+        backup_data = {
+            "users": BotDatabase.read_json(USERS_FILE),
+            "content": BotDatabase.read_json(CONTENT_FILE),
+            "settings": BotDatabase.read_json(SETTINGS_FILE),
+            "backup_date": datetime.now().isoformat(),
+            "backup_info": "تم إنشاء هذه النسخة بواسطة بوت التليجرام"
+        }
+        
+        # حفظ النسخة الاحتياطية في ملف مؤقت
+        backup_filename = f"bot_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        with open(backup_filename, 'w', encoding='utf-8') as f:
+            json.dump(backup_data, f, ensure_ascii=False, indent=2)
+        
+        # إرسال الملف للمستخدم
+        with open(backup_filename, 'rb') as f:
+            await update.message.reply_document(
+                document=f,
+                filename=backup_filename,
+                caption="💾 النسخة الاحتياطية للبوت\n\n"
+                       "يمكنك حفظ هذا الملف واستخدامه لاستعادة البيانات لاحقاً."
+            )
+        
+        # حذف الملف المؤقت
+        os.remove(backup_filename)
+        
+        await update.message.reply_text(
+            "✅ تم تنزيل النسخة الاحتياطية بنجاح!",
+            reply_markup=KeyboardManager.get_backup_keyboard()
+        )
+        
+    except Exception as e:
+        logger.error(f"Error creating backup: {e}")
+        await update.message.reply_text(
+            "❌ حدث خطأ أثناء إنشاء النسخة الاحتياطية.",
+            reply_markup=KeyboardManager.get_backup_keyboard()
+        )
 
 async def start_restore_backup(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    backup_files = [f for f in os.listdir(DATA_DIR) if f.startswith('backup_') and f.endswith('.json')]
-    
-    if not backup_files:
-        await update.message.reply_text("❌ لا توجد نسخ احتياطية.")
-        return ConversationHandler.END
-    
-    text = "🔄 استعادة نسخة احتياطية\n\nالنسخ المتاحة:\n"
-    for i, file in enumerate(backup_files[:5], 1):
-        text += f"{i}. {file}\n"
-    
-    text += "\nأرسل رقم النسخة التي تريد استعادتها:"
-    
-    await update.message.reply_text(text, reply_markup=KeyboardManager.get_back_keyboard())
+    await update.message.reply_text(
+        "🔄 رفع واستعادة نسخة احتياطية\n\n"
+        "الرجاء إرسال ملف النسخة الاحتياطية (JSON):",
+        reply_markup=KeyboardManager.get_back_keyboard()
+    )
     return BACKUP_RESTORE
 
 async def restore_backup(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        backup_index = int(update.message.text) - 1
-        backup_files = [f for f in os.listdir(DATA_DIR) if f.startswith('backup_') and f.endswith('.json')]
-        
-        if 0 <= backup_index < len(backup_files):
-            backup_file = backup_files[backup_index]
-            backup_path = os.path.join(DATA_DIR, backup_file)
+        if update.message.document:
+            # تحميل الملف
+            file = await update.message.document.get_file()
+            file_path = f"temp_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            await file.download_to_drive(file_path)
             
-            with open(backup_path, 'r', encoding='utf-8') as f:
+            # قراءة البيانات من الملف
+            with open(file_path, 'r', encoding='utf-8') as f:
                 backup_data = json.load(f)
             
+            # التحقق من صحة البيانات
+            if not all(key in backup_data for key in ['users', 'content', 'settings']):
+                await update.message.reply_text(
+                    "❌ ملف النسخة الاحتياطية غير صالح.",
+                    reply_markup=KeyboardManager.get_backup_keyboard()
+                )
+                os.remove(file_path)
+                return ConversationHandler.END
+            
+            # استعادة البيانات
             BotDatabase.write_json(USERS_FILE, backup_data.get('users', {}))
             BotDatabase.write_json(CONTENT_FILE, backup_data.get('content', {}))
             BotDatabase.write_json(SETTINGS_FILE, backup_data.get('settings', {}))
             
+            # تنظيف الملف المؤقت
+            os.remove(file_path)
+            
             await update.message.reply_text(
-                f"✅ تم استعادة النسخة الاحتياطية: {backup_file}",
+                f"✅ تم استعادة النسخة الاحتياطية بنجاح!\n"
+                f"📅 تاريخ النسخة: {backup_data.get('backup_date', 'غير معروف')}",
                 reply_markup=KeyboardManager.get_admin_keyboard()
             )
         else:
-            await update.message.reply_text("❌ رقم النسخة غير صحيح.")
+            await update.message.reply_text(
+                "❌ لم يتم إرسال ملف النسخة الاحتياطية.",
+                reply_markup=KeyboardManager.get_backup_keyboard()
+            )
     
-    except ValueError:
-        await update.message.reply_text("❌ الرجاء إدخال رقم صحيح.")
+    except json.JSONDecodeError:
+        await update.message.reply_text(
+            "❌ ملف النسخة الاحتياطية تالف أو غير صالح.",
+            reply_markup=KeyboardManager.get_backup_keyboard()
+        )
     except Exception as e:
-        await update.message.reply_text(f"❌ حدث خطأ أثناء الاستعادة: {e}")
+        logger.error(f"Error restoring backup: {e}")
+        await update.message.reply_text(
+            f"❌ حدث خطأ أثناء استعادة النسخة: {str(e)}",
+            reply_markup=KeyboardManager.get_backup_keyboard()
+        )
     
     return ConversationHandler.END
 
 async def show_backups(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    backup_files = [f for f in os.listdir(DATA_DIR) if f.startswith('backup_') and f.endswith('.json')]
+    """عرض معلومات عن النسخ الاحتياطية"""
+    text = (
+        "📋 معلومات النسخ الاحتياطية\n\n"
+        "💾 **تنزيل نسخة**:\n"
+        "• ينشئ نسخة احتياطية كاملة من بيانات البوت\n"
+        "• يتم تنزيلها كملف JSON\n"
+        "• يمكنك حفظها على جهازك\n\n"
+        "🔄 **رفع نسخة**:\n"
+        "• استعادة البيانات من ملف نسخة احتياطية\n"
+        "• يجب أن يكون الملف بصيغة JSON\n"
+        "• سيتم استبدال جميع البيانات الحالية\n\n"
+        "⚠️ **ملاحظة مهمة**:\n"
+        "• احتفظ بنسخ احتياطية في مكان آمن\n"
+        "• تأكد من صحة الملف قبل الرفع\n"
+        "• الاستعادة تحذف جميع البيانات الحالية"
+    )
     
-    if not backup_files:
-        await update.message.reply_text("📭 لا توجد نسخ احتياطية.")
-        return
-    
-    text = "📋 النسخ الاحتياطية:\n\n"
-    for file in backup_files:
-        file_path = os.path.join(DATA_DIR, file)
-        file_time = os.path.getctime(file_path)
-        file_date = datetime.fromtimestamp(file_time).strftime('%Y-%m-%d %H:%M')
-        text += f"• {file}\n  📅 {file_date}\n\n"
-    
-    await update.message.reply_text(text)
+    await update.message.reply_text(text, reply_markup=KeyboardManager.get_backup_keyboard())
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -1651,9 +1710,9 @@ def main():
     )
     
     backup_conv = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex("^🔄 استعادة نسخة$"), start_restore_backup)],
+        entry_points=[MessageHandler(filters.Regex("^🔄 رفع نسخة$"), start_restore_backup)],
         states={
-            BACKUP_RESTORE: [MessageHandler(filters.TEXT & ~filters.COMMAND, restore_backup)],
+            BACKUP_RESTORE: [MessageHandler(filters.Document.ALL, restore_backup)],
         },
         fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
     )
