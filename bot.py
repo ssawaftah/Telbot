@@ -52,7 +52,7 @@ class BotDatabase:
             SETTINGS_FILE: {
                 "subscription": {
                     "enabled": False,
-                    "channels": ["@channel_username"],
+                    "channels": ["@ineswangy"],
                     "message": "📢 يجب الاشتراك في القناة أولاً لتتمكن من استخدام البوت"
                 },
                 "responses": {
@@ -331,9 +331,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ADMIN_IDS:
         ADMIN_IDS.append(user_id)
         await update.message.reply_text(
-            "👑 تم تعيينك كمشرف رئيسي للبوت!\n\n"
+            "*👑 تم تعيينك كمشرف رئيسي للبوت!\n\n*"
             "يمكنك الآن استخدام لوحة التحكم للإدارة الكاملة للبوت.",
             reply_markup=KeyboardManager.get_admin_keyboard()
+            parse_mode='Markdown'
         )
         return
     
@@ -354,6 +355,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         f"القنوات المطلوبة:\n{channels_text}\n\n"
                         "بعد الاشتراك، اضغط على /start مرة أخرى",
                         reply_markup=ReplyKeyboardMarkup([["✅ تحقق من الاشتراك"]], resize_keyboard=True)
+                        parse_mode='Markdown'
                     )
                     return
             
@@ -367,16 +369,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
             else:
                 await update.message.reply_text(
-                    f"مرحباً مرة أخرى {update.effective_user.first_name}! 👋\n"
-                    "اختر من القائمة أدناه:",
-                    reply_markup=KeyboardManager.get_user_keyboard()
+    f"*مرحباً بعودتك يا {update.effective_user.first_name}! 👋*\n"
+    "_يسرّنا رؤيتك مجدداً._\n\n"
+    "⬇️ *اختر أحد الأقسام أدناه للمتابعة:*",
+    reply_markup=KeyboardManager.get_user_keyboard()
+                    parse_mode="Markdown"
+)
+
                 )
         else:
             # المستخدم غير مفعل
             await update.message.reply_text(
-                "⏳ طلبك قيد المراجعة من قبل المدير...\n"
+                "*⏳ طلبك قيد المراجعة من قبل المدير...\n*"
                 "سيتم إعلامك فور الموافقة على طلبك.",
                 reply_markup=KeyboardManager.get_waiting_keyboard()
+                parse_mode='Markdown'
             )
     else:
         # مستخدم جديد
