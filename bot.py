@@ -209,6 +209,30 @@ class KeyboardManager:
         
         keyboard_buttons = []
         
+        if current_index > 0:
+            prev_content = category_content[current_index - 1]
+            keyboard_buttons.append(InlineKeyboardButton("⬅️ السابق", callback_data=f"content_{prev_content['id']}"))
+        
+        keyboard_buttons.append(InlineKeyboardButton("🔙 رجوع", callback_data=f"back_to_category_{category_id}"))
+        
+        if current_index < len(category_content) - 1:
+            next_content = category_content[current_index + 1]
+            keyboard_buttons.append(InlineKeyboardButton("التالي ➡️", callback_data=f"content_{next_content['id']}"))
+        
+        return InlineKeyboardMarkup([keyboard_buttons])
+        
+    @staticmethod
+    def get_content_navigation_keyboard(content_id, category_id):
+        content_data = BotDatabase.read_json(CONTENT_FILE)
+        category_content = [item for item in content_data.get("content", []) if item.get("category_id") == category_id]
+        
+        if not category_content:
+            return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data=f"back_to_category_{category_id}")]])
+        
+        current_index = next((i for i, item in enumerate(category_content) if item['id'] == content_id), 0)
+        
+        keyboard_buttons = []
+        
         # زر السابق
         if current_index > 0:
             prev_content = category_content[current_index - 1]
