@@ -576,7 +576,10 @@ async def show_content_item_from_message(update: Update, context: ContextTypes.D
     try:
         if content_item['content_type'] == 'text':
             # عرض النص البسيط
-            message_text = f"📖 {content_item['title']}\n\n{content_item['text_content']}"
+message_text = (
+    f"📖 *{content_item['title']}*\n\n"
+    f"_{content_item['text_content']}_"
+)
             
             # إذا كان النص طويلاً جداً، نقسمه
             if len(message_text) > 4096:
