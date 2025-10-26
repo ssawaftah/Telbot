@@ -333,8 +333,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "*👑 تم تعيينك كمشرف رئيسي للبوت!\n\n*"
             "يمكنك الآن استخدام لوحة التحكم للإدارة الكاملة للبوت.",
-            reply_markup=KeyboardManager.get_admin_keyboard()
             parse_mode='Markdown'
+            reply_markup=KeyboardManager.get_admin_keyboard()
+            
         )
         return
     
