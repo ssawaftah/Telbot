@@ -19,13 +19,13 @@ ADMIN_IDS = []  # سيتم إضافة المدير تلقائياً
 
 # حالات المحادثة
 (
-    ADD_CATEGORY_NAME, ADD_CATEGORY_ICON,
+    ADD_CATEGORY_NAME,
     ADD_CONTENT_TITLE, ADD_CONTENT_TYPE, ADD_CONTENT_FILE, ADD_CONTENT_CATEGORY, ADD_CONTENT_TEXT,
     DELETE_USER, DELETE_CATEGORY, DELETE_CONTENT,
     EDIT_RESPONSE, EDIT_SUBSCRIPTION_MESSAGE, ADD_SUBSCRIPTION_CHANNEL, DELETE_SUBSCRIPTION_CHANNEL,
     BROADCAST_MESSAGE, SEND_TO_USER,
     BACKUP_RESTORE
-) = range(17)
+) = range(16)
 
 # ملفات البيانات
 DATA_DIR = "data"
@@ -43,8 +43,9 @@ class BotDatabase:
             USERS_FILE: {},
             CONTENT_FILE: {
                 "categories": [
-                    {"id": 1, "name": "القسم الأول", "icon": "📚", "created_date": datetime.now().isoformat()},
-                    {"id": 2, "name": "القسم الثاني", "icon": "🎨", "created_date": datetime.now().isoformat()}
+                    {"id": 1, "name": "القصص والروايات", "icon": "📚", "created_date": datetime.now().isoformat()},
+                    {"id": 2, "name": "الفيديوهات", "icon": "🎬", "created_date": datetime.now().isoformat()},
+                    {"id": 3, "name": "الصور", "icon": "🖼️", "created_date": datetime.now().isoformat()}
                 ],
                 "content": []
             },
@@ -174,10 +175,46 @@ class KeyboardManager:
         
         keyboard = []
         for category in categories:
-            keyboard.append([f"{category.get('icon', '📁')} {category['name']}"])
+            keyboard.append([f"{category['icon']} {category['name']}"])
         
         keyboard.append(["🏠 الرئيسية"])
         return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+    @staticmethod
+    def get_category_content_keyboard(category_id):
+        content_data = BotDatabase.read_json(CONTENT_FILE)
+        category_content = [item for item in content_data.get("content", []) if item.get("category_id") == category_id]
+        
+        keyboard = []
+        row = []
+        for i, item in enumerate(category_content, 1):
+            row.append(InlineKeyboardButton(item['title'], callback_data=f"content_{item['id']}"))
+            if i % 2 == 0 or i == len(category_content):
+                keyboard.append(row)
+                row = []
+        
+        keyboard.append([InlineKeyboardButton("🔙 رجوع للأقسام", callback_data="back_to_categories")])
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def get_content_navigation_keyboard(content_id, category_id):
+        content_data = BotDatabase.read_json(CONTENT_FILE)
+        category_content = [item for item in content_data.get("content", []) if item.get("category_id") == category_id]
+        
+        current_index = next((i for i, item in enumerate(category_content) if item['id'] == content_id), 0)
+        
+        keyboard = []
+        if current_index > 0:
+            prev_content = category_content[current_index - 1]
+            keyboard.append(InlineKeyboardButton("⬅️ السابق", callback_data=f"content_{prev_content['id']}"))
+        
+        keyboard.append(InlineKeyboardButton("🔙 رجوع للمحتوى", callback_data=f"category_{category_id}"))
+        
+        if current_index < len(category_content) - 1:
+            next_content = category_content[current_index + 1]
+            keyboard.append(InlineKeyboardButton("التالي ➡️", callback_data=f"content_{next_content['id']}"))
+        
+        return InlineKeyboardMarkup([keyboard])
 
     @staticmethod
     def get_user_management_keyboard():
@@ -426,11 +463,10 @@ async def handle_category_selection(update: Update, context: ContextTypes.DEFAUL
     categories = content.get("categories", [])
     
     for category in categories:
-        if text == f"{category.get('icon', '📁')} {category['name']}":
-            await show_category_content(update, context, category['id'])
+        if text == f"{category['icon']} {category['name']}":
+            await show_category_content_list(update, context, category['id'])
             return
     
-    # إذا لم يكن اختيار قسم، عرض القائمة المناسبة
     if is_admin(update.effective_user.id):
         await update.message.reply_text("❌ لم أفهم طلبك. اختر من القائمة أدناه:", reply_markup=KeyboardManager.get_admin_keyboard())
     else:
@@ -449,29 +485,59 @@ async def show_categories_to_user(update: Update, context: ContextTypes.DEFAULT_
         reply_markup=KeyboardManager.get_categories_keyboard()
     )
 
-async def show_category_content(update: Update, context: ContextTypes.DEFAULT_TYPE, category_id: int):
+async def show_category_content_list(update: Update, context: ContextTypes.DEFAULT_TYPE, category_id: int):
     content_data = BotDatabase.read_json(CONTENT_FILE)
+    categories = content_data.get("categories", [])
     category_content = [item for item in content_data.get("content", []) if item.get("category_id") == category_id]
     
+    category_name = next((cat['name'] for cat in categories if cat['id'] == category_id), "غير معروف")
+    
     if not category_content:
-        await update.message.reply_text("📭 لا يوجد محتوى في هذا القسم حالياً.")
+        await update.message.reply_text(f"📭 لا يوجد محتوى في قسم {category_name} حالياً.")
         return
     
-    text = f"📂 محتوى القسم:\n\n"
-    for i, item in enumerate(category_content[:10], 1):
-        text += f"{i}. {item.get('title', 'بدون عنوان')}\n"
-        if item.get('content_type') == 'text':
-            text += f"   📝 {item.get('text_content', '')[:50]}...\n"
-        elif item.get('content_type') == 'photo':
-            text += f"   🖼️ صورة\n"
-        elif item.get('content_type') == 'video':
-            text += f"   🎬 فيديو\n"
-        text += "\n"
+    text = f"📂 {category_name}\n\n"
+    text += f"عدد العناصر: {len(category_content)}\n\n"
+    text += "اختر المحتوى الذي تريد مشاهدته:"
     
-    if len(category_content) > 10:
-        text += f"📎 ... و{len(category_content) - 10} عنصر آخر"
+    await update.message.reply_text(text, reply_markup=KeyboardManager.get_category_content_keyboard(category_id))
+
+async def show_content_item(update: Update, context: ContextTypes.DEFAULT_TYPE, content_id: int):
+    content_data = BotDatabase.read_json(CONTENT_FILE)
+    content_item = next((item for item in content_data.get("content", []) if item['id'] == content_id), None)
     
-    await update.message.reply_text(text)
+    if not content_item:
+        await update.callback_query.edit_message_text("❌ المحتوى غير موجود.")
+        return
+    
+    category_id = content_item.get('category_id')
+    
+    if content_item['content_type'] == 'text':
+        await update.callback_query.edit_message_text(
+            f"📖 {content_item['title']}\n\n{content_item['text_content']}",
+            reply_markup=KeyboardManager.get_content_navigation_keyboard(content_id, category_id)
+        )
+    elif content_item['content_type'] == 'photo':
+        await update.callback_query.message.reply_photo(
+            photo=content_item['file_id'],
+            caption=f"🖼️ {content_item['title']}",
+            reply_markup=KeyboardManager.get_content_navigation_keyboard(content_id, category_id)
+        )
+        await update.callback_query.delete_message()
+    elif content_item['content_type'] == 'video':
+        await update.callback_query.message.reply_video(
+            video=content_item['file_id'],
+            caption=f"🎬 {content_item['title']}",
+            reply_markup=KeyboardManager.get_content_navigation_keyboard(content_id, category_id)
+        )
+        await update.callback_query.delete_message()
+    elif content_item['content_type'] == 'document':
+        await update.callback_query.message.reply_document(
+            document=content_item['file_id'],
+            caption=f"📄 {content_item['title']}",
+            reply_markup=KeyboardManager.get_content_navigation_keyboard(content_id, category_id)
+        )
+        await update.callback_query.delete_message()
 
 async def show_user_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -632,7 +698,7 @@ async def show_categories_management(update: Update, context: ContextTypes.DEFAU
         text += "الأقسام الحالية:\n"
         for cat in categories:
             items_count = len([item for item in content.get('content', []) if item.get('category_id') == cat['id']])
-            text += f"• {cat.get('icon', '📁')} {cat['name']} (المحتوى: {items_count})\n"
+            text += f"• {cat['icon']} {cat['name']} (المحتوى: {items_count})\n"
     else:
         text += "لا توجد أقسام حالياً.\n"
     
@@ -641,50 +707,57 @@ async def show_categories_management(update: Update, context: ContextTypes.DEFAU
     await update.message.reply_text(text, reply_markup=KeyboardManager.get_categories_management_keyboard())
 
 async def start_add_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "➕ إضافة قسم جديد\n\n"
-        "أرسل اسم القسم:",
-        reply_markup=KeyboardManager.get_back_keyboard()
-    )
-    return ADD_CATEGORY_NAME
-
-async def add_category_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data['category_name'] = update.message.text
-    await update.message.reply_text(
-        "الآن اختر أيقونة للقسم:\n\n"
-        "📚 🎨 📖 🎬 ⭐ 🔥 💎 🏆 🎯 🎪 🎮 🎭 🎨 📸 🎥",
-        reply_markup=KeyboardManager.get_back_keyboard()
-    )
-    return ADD_CATEGORY_ICON
-
-async def add_category_icon(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    category_name = context.user_data['category_name']
-    category_icon = update.message.text
-    
     content = BotDatabase.read_json(CONTENT_FILE)
     categories = content.get("categories", [])
     
-    new_id = max([cat.get('id', 0) for cat in categories] or [0]) + 1
+    suggested_icons = "📚 🎬 🖼️ 🎵 📄 🎮 🏆 💡 🔥 ⭐ 🌟 🎯 🎨 🎭 🎪 🎤 🎧"
     
-    new_category = {
-        "id": new_id,
-        "name": category_name,
-        "icon": category_icon,
-        "created_date": datetime.now().isoformat()
-    }
+    text = "➕ إضافة قسم جديد\n\n"
+    text += "الأيقونات المقترحة:\n"
+    text += suggested_icons + "\n\n"
+    text += "أرسل اسم القسم مع الأيقونة:\nمثال: 📚 قصص منوعة"
     
-    categories.append(new_category)
-    content["categories"] = categories
-    BotDatabase.write_json(CONTENT_FILE, content)
+    await update.message.reply_text(text, reply_markup=KeyboardManager.get_back_keyboard())
+    return ADD_CATEGORY_NAME
+
+async def add_category_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_input = update.message.text.strip()
     
-    await update.message.reply_text(
-        f"✅ تم إضافة القسم بنجاح!\n\n"
-        f"اسم القسم: {category_icon} {category_name}\n"
-        f"رقم القسم: {new_id}",
-        reply_markup=KeyboardManager.get_admin_keyboard()
-    )
-    
-    return ConversationHandler.END
+    if user_input and len(user_input) > 1:
+        category_icon = user_input[0]
+        category_name = user_input[1:].strip()
+        
+        if not category_name:
+            await update.message.reply_text("❌ الرجاء إدخال اسم صحيح للقسم.")
+            return ADD_CATEGORY_NAME
+        
+        content = BotDatabase.read_json(CONTENT_FILE)
+        categories = content.get("categories", [])
+        
+        new_id = max([cat.get('id', 0) for cat in categories] or [0]) + 1
+        
+        new_category = {
+            "id": new_id,
+            "name": category_name,
+            "icon": category_icon,
+            "created_date": datetime.now().isoformat()
+        }
+        
+        categories.append(new_category)
+        content["categories"] = categories
+        BotDatabase.write_json(CONTENT_FILE, content)
+        
+        await update.message.reply_text(
+            f"✅ تم إضافة القسم بنجاح!\n\n"
+            f"اسم القسم: {category_icon} {category_name}\n"
+            f"رقم القسم: {new_id}",
+            reply_markup=KeyboardManager.get_admin_keyboard()
+        )
+        
+        return ConversationHandler.END
+    else:
+        await update.message.reply_text("❌ الرجاء إدخال اسم قسم صحيح مع أيقونة.")
+        return ADD_CATEGORY_NAME
 
 async def start_delete_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
     content = BotDatabase.read_json(CONTENT_FILE)
@@ -697,7 +770,7 @@ async def start_delete_category(update: Update, context: ContextTypes.DEFAULT_TY
     text = "🗑️ حذف قسم\n\nالأقسام الحالية:\n"
     for cat in categories:
         items_count = len([item for item in content.get('content', []) if item.get('category_id') == cat['id']])
-        text += f"• {cat['id']}: {cat.get('icon', '📁')} {cat['name']} (المحتوى: {items_count})\n"
+        text += f"• {cat['id']}: {cat['icon']} {cat['name']} (المحتوى: {items_count})\n"
     
     text += "\nأرسل رقم القسم الذي تريد حذفه:"
     
@@ -723,7 +796,7 @@ async def delete_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
             BotDatabase.write_json(CONTENT_FILE, content)
             
             await update.message.reply_text(
-                f"✅ تم حذف القسم: {category_to_delete.get('icon', '📁')} {category_to_delete['name']}",
+                f"✅ تم حذف القسم: {category_to_delete['icon']} {category_to_delete['name']}",
                 reply_markup=KeyboardManager.get_admin_keyboard()
             )
         else:
@@ -745,7 +818,7 @@ async def show_all_categories(update: Update, context: ContextTypes.DEFAULT_TYPE
     text = "📋 جميع الأقسام:\n\n"
     for cat in categories:
         items_count = len([item for item in content.get('content', []) if item.get('category_id') == cat['id']])
-        text += f"• {cat.get('icon', '📁')} {cat['name']}\n"
+        text += f"• {cat['icon']} {cat['name']}\n"
         text += f"  🆔 الرقم: {cat['id']}\n"
         text += f"  📊 المحتوى: {items_count} عنصر\n"
         text += f"  📅 التاريخ: {cat.get('created_date', '')[:10]}\n\n"
@@ -797,8 +870,10 @@ async def add_content_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if selected_type == "text":
         await update.message.reply_text(
-            "أرسل النص الذي تريد إضافته:",
-            reply_markup=KeyboardManager.get_back_keyboard()
+            "أرسل النص الذي تريد إضافته:\n\n"
+            "يمكنك إرسال النص على عدة رسائل\n"
+            "وعند الانتهاء اكتب /done لحفظ المحتوى",
+            reply_markup=ReplyKeyboardMarkup([["/done"], ["🏠 الرئيسية"]], resize_keyboard=True)
         )
         return ADD_CONTENT_TEXT
     else:
@@ -809,30 +884,54 @@ async def add_content_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ADD_CONTENT_FILE
 
 async def add_content_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text_content = update.message.text
-    context.user_data['text_content'] = text_content
-    
-    content_data = BotDatabase.read_json(CONTENT_FILE)
-    categories = content_data.get("categories", [])
-    
-    if not categories:
+    if update.message.text == '/done':
+        text_content = context.user_data.get('content_text', '')
+        if not text_content:
+            await update.message.reply_text("❌ لم يتم إضافة أي نص. الرجاء إرسال النص أولاً.")
+            return ADD_CONTENT_TEXT
+        
+        context.user_data['text_content'] = text_content
+        
+        content_data = BotDatabase.read_json(CONTENT_FILE)
+        categories = content_data.get("categories", [])
+        
+        if not categories:
+            await update.message.reply_text(
+                "❌ لا توجد أقسام. يجب إنشاء قسم أولاً.",
+                reply_markup=KeyboardManager.get_admin_keyboard()
+            )
+            return ConversationHandler.END
+        
+        text = "✅ تم حفظ النص بنجاح!\n\n"
+        text += "اختر القسم لإضافة المحتوى:\n\n"
+        keyboard_buttons = []
+        for cat in categories:
+            text += f"• {cat['icon']} {cat['name']} (ID: {cat['id']})\n"
+            keyboard_buttons.append([f"القسم {cat['id']}"])
+        
+        keyboard_buttons.append(["🏠 الرئيسية"])
+        keyboard = ReplyKeyboardMarkup(keyboard_buttons, resize_keyboard=True)
+        
+        await update.message.reply_text(text, reply_markup=keyboard)
+        return ADD_CONTENT_CATEGORY
+    else:
+        current_text = context.user_data.get('content_text', '')
+        new_text = update.message.text
+        
+        if current_text:
+            context.user_data['content_text'] = current_text + "\n\n" + new_text
+        else:
+            context.user_data['content_text'] = new_text
+        
+        text_length = len(context.user_data['content_text'])
+        
         await update.message.reply_text(
-            "❌ لا توجد أقسام. يجب إنشاء قسم أولاً.",
-            reply_markup=KeyboardManager.get_admin_keyboard()
+            f"✅ تم إضافة الجزء النصي.\n"
+            f"إجمالي النص: {text_length} حرف\n\n"
+            "يمكنك إرسال المزيد من النص أو اكتب /done لحفظ المحتوى",
+            reply_markup=ReplyKeyboardMarkup([["/done"], ["🏠 الرئيسية"]], resize_keyboard=True)
         )
-        return ConversationHandler.END
-    
-    text = "اختر القسم لإضافة المحتوى:\n\n"
-    keyboard_buttons = []
-    for cat in categories:
-        text += f"• {cat.get('icon', '📁')} {cat['name']} (ID: {cat['id']})\n"
-        keyboard_buttons.append([f"القسم {cat['id']}"])
-    
-    keyboard_buttons.append(["🏠 الرئيسية"])
-    keyboard = ReplyKeyboardMarkup(keyboard_buttons, resize_keyboard=True)
-    
-    await update.message.reply_text(text, reply_markup=keyboard)
-    return ADD_CONTENT_CATEGORY
+        return ADD_CONTENT_TEXT
 
 async def add_content_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     content_type = context.user_data['content_type']
@@ -861,7 +960,7 @@ async def add_content_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = "اختر القسم لإضافة المحتوى:\n\n"
         keyboard_buttons = []
         for cat in categories:
-            text += f"• {cat.get('icon', '📁')} {cat['name']} (ID: {cat['id']})\n"
+            text += f"• {cat['icon']} {cat['name']} (ID: {cat['id']})\n"
             keyboard_buttons.append([f"القسم {cat['id']}"])
         
         keyboard_buttons.append(["🏠 الرئيسية"])
@@ -1320,11 +1419,18 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     user_id = update.effective_user.id
     
-    if not is_admin(user_id):
+    if data.startswith("content_"):
+        content_id = int(data.split("_")[1])
+        await show_content_item(update, context, content_id)
+    elif data.startswith("category_"):
+        category_id = int(data.split("_")[1])
+        await show_category_content_list(update, context, category_id)
+    elif data == "back_to_categories":
+        await show_categories_to_user(update, context)
+    elif not is_admin(user_id):
         await query.edit_message_text("❌ ليس لديك صلاحية للقيام بهذا الإجراء.")
         return
-    
-    if data.startswith("accept_"):
+    elif data.startswith("accept_"):
         target_user = data.split("_")[1]
         await accept_user_callback(update, context, target_user)
     elif data.startswith("reject_"):
@@ -1389,7 +1495,6 @@ def main():
         entry_points=[MessageHandler(filters.Regex("^➕ إضافة قسم$"), start_add_category)],
         states={
             ADD_CATEGORY_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_category_name)],
-            ADD_CATEGORY_ICON: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_category_icon)],
         },
         fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
     )
