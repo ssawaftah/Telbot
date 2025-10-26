@@ -355,8 +355,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         f"{BotDatabase.get_setting('subscription.message')}\n\n"
                         f"القنوات المطلوبة:\n{channels_text}\n\n"
                         "بعد الاشتراك، اضغط على /start مرة أخرى",
+                        parse_mode='Markdown',
                         reply_markup=ReplyKeyboardMarkup([["✅ تحقق من الاشتراك"]], resize_keyboard=True)
-                        parse_mode='Markdown'
+                        
                     )
                     return
             
