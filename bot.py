@@ -40,7 +40,8 @@ os.makedirs(DATA_DIR, exist_ok=True)
 
 USERS_FILE = os.path.join(DATA_DIR, "users.json")
 CONTENT_FILE = os.path.join(DATA_DIR, "content.json")
-CHANNELS_FILE = os.path.join(DATA_DIR, "channels.json")
+CHANNELS_FILE = os.path.join(DATA_DIR, "channels.json")  # لقنوات البوت العادية
+SUBSCRIPTION_CHANNELS_FILE = os.path.join(DATA_DIR, "subscription_channels.json")  # لقنوات الاشتراك الإجباري
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 REQUESTS_FILE = os.path.join(DATA_DIR, "requests.json")
 
@@ -53,12 +54,14 @@ class BotDatabase:
                 "content": []
             },
             CHANNELS_FILE: {
-                "channels": []
+                "channels": []  # قنوات البوت العادية
+            },
+            SUBSCRIPTION_CHANNELS_FILE: {
+                "channels": ["@ineswangy"]  # قنوات الاشتراك الإجباري فقط
             },
             SETTINGS_FILE: {
                 "subscription": {
                     "enabled": False,
-                    "channels": ["@ineswangy"],
                     "message": "📢 يجب الاشتراك في القناة أولاً لتتمكن من استخدام البوت"
                 },
                 "responses": {
@@ -91,6 +94,8 @@ class BotDatabase:
             elif "content" in file_path:
                 return {"content": []}
             elif "channels" in file_path:
+                return {"channels": []}
+            elif "subscription_channels" in file_path:
                 return {"channels": []}
             elif "requests" in file_path:
                 return []
@@ -166,6 +171,7 @@ class BotDatabase:
             if new_id not in existing_ids:
                 return new_id
 
+    # === دوال قنوات البوت العادية ===
     @staticmethod
     def add_channel(name, link):
         channels_data = BotDatabase.read_json(CHANNELS_FILE)
@@ -203,6 +209,39 @@ class BotDatabase:
             BotDatabase.write_json(CHANNELS_FILE, channels_data)
             return channel_to_delete
         
+        return None
+
+    # === دوال قنوات الاشتراك الإجباري ===
+    @staticmethod
+    def get_subscription_channels():
+        """الحصول على قنوات الاشتراك الإجباري"""
+        subscription_data = BotDatabase.read_json(SUBSCRIPTION_CHANNELS_FILE)
+        return subscription_data.get("channels", [])
+
+    @staticmethod
+    def add_subscription_channel(channel):
+        """إضافة قناة للاشتراك الإجباري"""
+        subscription_data = BotDatabase.read_json(SUBSCRIPTION_CHANNELS_FILE)
+        channels = subscription_data.get("channels", [])
+        
+        if channel not in channels:
+            channels.append(channel)
+            subscription_data["channels"] = channels
+            BotDatabase.write_json(SUBSCRIPTION_CHANNELS_FILE, subscription_data)
+            return True
+        return False
+
+    @staticmethod
+    def delete_subscription_channel(channel_index):
+        """حذف قناة من الاشتراك الإجباري"""
+        subscription_data = BotDatabase.read_json(SUBSCRIPTION_CHANNELS_FILE)
+        channels = subscription_data.get("channels", [])
+        
+        if 0 <= channel_index < len(channels):
+            deleted_channel = channels.pop(channel_index)
+            subscription_data["channels"] = channels
+            BotDatabase.write_json(SUBSCRIPTION_CHANNELS_FILE, subscription_data)
+            return deleted_channel
         return None
 
     @staticmethod
@@ -329,8 +368,8 @@ class KeyboardManager:
     def get_subscription_management_keyboard():
         return ReplyKeyboardMarkup([
             ["🔔 تفعيل/إلغاء", "✏️ تعديل الرسالة"],
-            ["📝 إضافة قناة", "🗑️ حذف قناة"],
-            ["📋 عرض القنوات", "🏠 الرئيسية"]
+            ["📝 إضافة قناة اشتراك", "🗑️ حذف قناة اشتراك"],
+            ["📋 عرض قنوات الاشتراك", "🏠 الرئيسية"]
         ], resize_keyboard=True)
 
     @staticmethod
@@ -371,11 +410,11 @@ def is_user_approved(user_id):
     return user_data.get('approved', False)
 
 async def check_subscription(user_id, context):
-    """التحقق من اشتراك المستخدم في القنوات المطلوبة"""
+    """التحقق من اشتراك المستخدم في قنوات الاشتراك الإجباري فقط"""
     if not BotDatabase.get_setting("subscription.enabled"):
         return True
     
-    channels = BotDatabase.get_setting("subscription.channels")
+    channels = BotDatabase.get_subscription_channels()  # استخدام قنوات الاشتراك الإجباري فقط
     if not channels:
         return True
     
@@ -439,7 +478,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # التحقق من الاشتراك الإجباري - يستخدم قنوات الاشتراك الإجباري فقط
             if BotDatabase.get_setting("subscription.enabled"):
                 if not await check_subscription(user_id, context):
-                    channels = BotDatabase.get_setting("subscription.channels")
+                    channels = BotDatabase.get_subscription_channels()  # استخدام القنوات الصحيحة
                     channels_text = "\n".join([f"• {ch}" for ch in channels])
                     
                     await update.message.reply_text(
@@ -508,6 +547,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # تحويل إجراء طلب انضمام جديد
         await forward_user_action(update, context, "طلب انضمام جديد", f"اسم المستخدم: {update.effective_user.first_name}")
+
 async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
     user_id = update.effective_user.id
     
@@ -523,7 +563,7 @@ async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     # التحقق من الاشتراك الإجباري
     if BotDatabase.get_setting("subscription.enabled"):
         if not await check_subscription(user_id, context):
-            channels = BotDatabase.get_setting("subscription.channels")
+            channels = BotDatabase.get_subscription_channels()  # استخدام القنوات الصحيحة
             channels_text = "\n".join([f"• {ch}" for ch in channels])
             
             await update.message.reply_text(
@@ -551,7 +591,7 @@ async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             )
             await forward_user_action(update, context, "تحقق من الاشتراك", "نجح التحقق من الاشتراك")
         else:
-            channels = BotDatabase.get_setting("subscription.channels")
+            channels = BotDatabase.get_subscription_channels()  # استخدام القنوات الصحيحة
             channels_text = "\n".join([f"• {ch}" for ch in channels])
             await update.message.reply_text(
                 f"{BotDatabase.get_setting('responses.subscribe_failed')}\n\n"
@@ -571,7 +611,7 @@ async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         await handle_channel_selection(update, context, text)
 
 async def show_channels_to_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    channels = BotDatabase.get_channels()
+    channels = BotDatabase.get_channels()  # قنوات البوت العادية فقط
     
     if not channels:
         await update.message.reply_text("📭 لا توجد قنوات متاحة حالياً.")
@@ -590,7 +630,7 @@ async def ask_for_content_id(update: Update, context: ContextTypes.DEFAULT_TYPE)
     context.user_data['waiting_for_id'] = True
 
 async def handle_channel_selection(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
-    channels = BotDatabase.get_channels()
+    channels = BotDatabase.get_channels()  # قنوات البوت العادية فقط
     
     for channel in channels:
         if text == f"📺 {channel['name']}":
@@ -726,11 +766,11 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
         await toggle_subscription(update, context)
     elif text == "✏️ تعديل الرسالة":
         await start_edit_subscription_message(update, context)
-    elif text == "📝 إضافة قناة":
+    elif text == "📝 إضافة قناة اشتراك":
         await start_add_subscription_channel(update, context)
-    elif text == "🗑️ حذف قناة":
+    elif text == "🗑️ حذف قناة اشتراك":
         await start_delete_subscription_channel(update, context)
-    elif text == "📋 عرض القنوات":
+    elif text == "📋 عرض قنوات الاشتراك":
         await show_subscription_channels(update, context)
     elif text == "✏️ تعديل رسالة الترحيب":
         await start_edit_response(update, context, "welcome")
@@ -776,11 +816,13 @@ async def show_admin_dashboard(update: Update, context: ContextTypes.DEFAULT_TYP
     users = BotDatabase.read_json(USERS_FILE)
     content = BotDatabase.get_all_content()
     channels = BotDatabase.get_channels()
+    subscription_channels = BotDatabase.get_subscription_channels()
     
     active_users = len([u for u in users.values() if u.get('approved', False)])
     total_users = len(users)
     pending_requests = len(BotDatabase.get_pending_requests())
     channels_count = len(channels)
+    subscription_channels_count = len(subscription_channels)
     content_count = len(content)
     
     stats_text = (
@@ -788,7 +830,8 @@ async def show_admin_dashboard(update: Update, context: ContextTypes.DEFAULT_TYP
         "📊 الإحصائيات السريعة:\n"
         f"• 👥 المستخدمين النشطين: {active_users}\n"
         f"• ⏳ طلبات الانتظار: {pending_requests}\n"
-        f"• 📺 القنوات: {channels_count}\n"
+        f"• 📺 قنوات البوت: {channels_count}\n"
+        f"• 📢 قنوات الاشتراك: {subscription_channels_count}\n"
         f"• 🎭 محتوى: {content_count}\n\n"
         "اختر من القائمة أدناه للإدارة:"
     )
@@ -881,11 +924,13 @@ async def show_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
     users = BotDatabase.read_json(USERS_FILE)
     content = BotDatabase.get_all_content()
     channels = BotDatabase.get_channels()
+    subscription_channels = BotDatabase.get_subscription_channels()
     
     active_users = len(BotDatabase.get_approved_users())
     total_users = len(users)
     pending_requests = len(BotDatabase.get_pending_requests())
     channels_count = len(channels)
+    subscription_channels_count = len(subscription_channels)
     content_count = len(content)
     
     text = (
@@ -896,7 +941,8 @@ async def show_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"• طلبات الانتظار: {pending_requests}\n"
         f"• النسبة: {round((active_users/total_users)*100 if total_users > 0 else 0, 1)}%\n\n"
         f"🎭 المحتوى:\n"
-        f"• القنوات: {channels_count}\n"
+        f"• قنوات البوت: {channels_count}\n"
+        f"• قنوات الاشتراك: {subscription_channels_count}\n"
         f"• العناصر: {content_count}\n\n"
         f"⚙️ الإعدادات:\n"
         f"• الاشتراك الإجباري: {'✅ مفعل' if BotDatabase.get_setting('subscription.enabled') else '❌ معطل'}\n"
@@ -906,9 +952,9 @@ async def show_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text)
 
 async def show_channels_management(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    channels = BotDatabase.get_channels()
+    channels = BotDatabase.get_channels()  # قنوات البوت العادية فقط
     
-    text = "📺 إدارة القنوات\n\n"
+    text = "📺 إدارة قنوات البوت\n\n"
     if channels:
         text += "القنوات الحالية:\n"
         for channel in channels:
@@ -922,7 +968,7 @@ async def show_channels_management(update: Update, context: ContextTypes.DEFAULT
 
 async def start_add_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "➕ إضافة قناة جديدة\n\n"
+        "➕ إضافة قناة جديدة للبوت\n\n"
         "أرسل اسم القناة:",
         reply_markup=KeyboardManager.get_back_keyboard()
     )
@@ -954,7 +1000,7 @@ async def add_channel_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     channel_id = BotDatabase.add_channel(channel_name, channel_link)
     
     await update.message.reply_text(
-        f"✅ تم إضافة القناة بنجاح!\n\n"
+        f"✅ تم إضافة قناة البوت بنجاح!\n\n"
         f"اسم القناة: {channel_name}\n"
         f"الرابط: {channel_link}\n"
         f"رقم القناة: {channel_id}",
@@ -964,13 +1010,13 @@ async def add_channel_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 async def start_delete_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    channels = BotDatabase.get_channels()
+    channels = BotDatabase.get_channels()  # قنوات البوت العادية فقط
     
     if not channels:
-        await update.message.reply_text("❌ لا توجد قنوات لحذفها.")
+        await update.message.reply_text("❌ لا توجد قنوات بوت لحذفها.")
         return ConversationHandler.END
     
-    text = "🗑️ حذف قناة\n\nالقنوات الحالية:\n"
+    text = "🗑️ حذف قناة بوت\n\nالقنوات الحالية:\n"
     for channel in channels:
         text += f"• {channel['id']}: {channel['name']} - {channel['link']}\n"
     
@@ -986,11 +1032,11 @@ async def delete_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if deleted_channel:
             await update.message.reply_text(
-                f"✅ تم حذف القناة: {deleted_channel['name']}",
+                f"✅ تم حذف قناة البوت: {deleted_channel['name']}",
                 reply_markup=KeyboardManager.get_admin_keyboard()
             )
         else:
-            await update.message.reply_text("❌ لم يتم العثور على القناة.")
+            await update.message.reply_text("❌ لم يتم العثور على قناة البوت.")
     
     except ValueError:
         await update.message.reply_text("❌ الرجاء إدخال رقم صحيح.")
@@ -998,13 +1044,13 @@ async def delete_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 async def show_all_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    channels = BotDatabase.get_channels()
+    channels = BotDatabase.get_channels()  # قنوات البوت العادية فقط
     
     if not channels:
-        await update.message.reply_text("📭 لا توجد قنوات.")
+        await update.message.reply_text("📭 لا توجد قنوات بوت.")
         return
     
-    text = "📋 جميع القنوات:\n\n"
+    text = "📋 جميع قنوات البوت:\n\n"
     for channel in channels:
         text += f"• {channel['name']}\n"
         text += f"  🆔 الرقم: {channel['id']}\n"
@@ -1014,8 +1060,8 @@ async def show_all_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text)
 
 async def show_content_management(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    content = BotDatabase.get_all_content()
-    items_count = len(content)
+    content_items = BotDatabase.get_all_content()
+    items_count = len(content_items)
     
     text = f"🎭 إدارة المحتوى\n\nإجمالي العناصر: {items_count}\n\n"
     text += "اختر الإجراء المطلوب:"
@@ -1248,7 +1294,7 @@ async def show_all_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def show_subscription_management(update: Update, context: ContextTypes.DEFAULT_TYPE):
     enabled = BotDatabase.get_setting("subscription.enabled")
-    channels = BotDatabase.get_setting("subscription.channels")
+    channels = BotDatabase.get_subscription_channels()  # استخدام القنوات الصحيحة
     
     text = (
         "📢 إدارة الاشتراك الإجباري\n\n"
@@ -1299,13 +1345,10 @@ async def start_add_subscription_channel(update: Update, context: ContextTypes.D
 
 async def add_subscription_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     channel = update.message.text.strip()
-    channels = BotDatabase.get_setting("subscription.channels")
     
-    if channel not in channels:
-        channels.append(channel)
-        BotDatabase.set_setting("subscription.channels", channels)
+    if BotDatabase.add_subscription_channel(channel):
         await update.message.reply_text(
-            f"✅ تم إضافة القناة: {channel}",
+            f"✅ تم إضافة قناة الاشتراك: {channel}",
             reply_markup=KeyboardManager.get_subscription_management_keyboard()
         )
     else:
@@ -1317,13 +1360,13 @@ async def add_subscription_channel(update: Update, context: ContextTypes.DEFAULT
     return ConversationHandler.END
 
 async def start_delete_subscription_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    channels = BotDatabase.get_setting("subscription.channels")
+    channels = BotDatabase.get_subscription_channels()  # استخدام القنوات الصحيحة
     
     if not channels:
-        await update.message.reply_text("❌ لا توجد قنوات لحذفها.")
+        await update.message.reply_text("❌ لا توجد قنوات اشتراك لحذفها.")
         return ConversationHandler.END
     
-    text = "🗑️ حذف قناة\n\nالقنوات الحالية:\n"
+    text = "🗑️ حذف قناة اشتراك\n\nالقنوات الحالية:\n"
     for i, channel in enumerate(channels, 1):
         text += f"{i}. {channel}\n"
     
@@ -1335,14 +1378,11 @@ async def start_delete_subscription_channel(update: Update, context: ContextType
 async def delete_subscription_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         channel_index = int(update.message.text) - 1
-        channels = BotDatabase.get_setting("subscription.channels")
+        deleted_channel = BotDatabase.delete_subscription_channel(channel_index)
         
-        if 0 <= channel_index < len(channels):
-            deleted_channel = channels.pop(channel_index)
-            BotDatabase.set_setting("subscription.channels", channels)
-            
+        if deleted_channel:
             await update.message.reply_text(
-                f"✅ تم حذف القناة: {deleted_channel}",
+                f"✅ تم حذف قناة الاشتراك: {deleted_channel}",
                 reply_markup=KeyboardManager.get_subscription_management_keyboard()
             )
         else:
@@ -1354,10 +1394,10 @@ async def delete_subscription_channel(update: Update, context: ContextTypes.DEFA
     return ConversationHandler.END
 
 async def show_subscription_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    channels = BotDatabase.get_setting("subscription.channels")
+    channels = BotDatabase.get_subscription_channels()  # استخدام القنوات الصحيحة
     
     if not channels:
-        await update.message.reply_text("📭 لا توجد قنوات مسجلة.")
+        await update.message.reply_text("📭 لا توجد قنوات اشتراك مسجلة.")
         return
     
     text = "📋 قنوات الاشتراك الإجباري:\n\n"
@@ -1498,6 +1538,7 @@ async def download_backup(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "users": BotDatabase.read_json(USERS_FILE),
             "content": BotDatabase.read_json(CONTENT_FILE),
             "channels": BotDatabase.read_json(CHANNELS_FILE),
+            "subscription_channels": BotDatabase.read_json(SUBSCRIPTION_CHANNELS_FILE),
             "settings": BotDatabase.read_json(SETTINGS_FILE),
             "backup_date": datetime.now().isoformat(),
             "backup_info": "تم إنشاء هذه النسخة بواسطة بوت التليجرام"
@@ -1566,6 +1607,10 @@ async def restore_backup(update: Update, context: ContextTypes.DEFAULT_TYPE):
             BotDatabase.write_json(CONTENT_FILE, backup_data.get('content', {}))
             BotDatabase.write_json(CHANNELS_FILE, backup_data.get('channels', {}))
             BotDatabase.write_json(SETTINGS_FILE, backup_data.get('settings', {}))
+            
+            # استعادة قنوات الاشتراك الإجباري إذا كانت موجودة
+            if 'subscription_channels' in backup_data:
+                BotDatabase.write_json(SUBSCRIPTION_CHANNELS_FILE, backup_data.get('subscription_channels', {}))
             
             # تنظيف الملف المؤقت
             os.remove(file_path)
@@ -1756,8 +1801,8 @@ def main():
     subscription_conv = ConversationHandler(
         entry_points=[
             MessageHandler(filters.Regex("^✏️ تعديل الرسالة$"), start_edit_subscription_message),
-            MessageHandler(filters.Regex("^📝 إضافة قناة$"), start_add_subscription_channel),
-            MessageHandler(filters.Regex("^🗑️ حذف قناة$"), start_delete_subscription_channel),
+            MessageHandler(filters.Regex("^📝 إضافة قناة اشتراك$"), start_add_subscription_channel),
+            MessageHandler(filters.Regex("^🗑️ حذف قناة اشتراك$"), start_delete_subscription_channel),
         ],
         states={
             EDIT_SUBSCRIPTION_MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_subscription_message)],
