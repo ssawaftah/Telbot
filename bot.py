@@ -46,42 +46,42 @@ SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 REQUESTS_FILE = os.path.join(DATA_DIR, "requests.json")
 
 class BotDatabase:
-   @staticmethod
-   def init_default_data():
-    default_data = {
-        USERS_FILE: {},
-        CONTENT_FILE: {
-            "content": []
-        },
-        CHANNELS_FILE: {
-            "channels": []  # قنوات البوت العادية
-        },
-        SUBSCRIPTION_CHANNELS_FILE: {
-            "channels": ["@ineswangy"]  # قنوات الاشتراك الإجباري فقط
-        },
-        SETTINGS_FILE: {
-            "subscription": {
-                "enabled": False,
-                "message": "*📢 يجب الاشتراك في القناة أولاً*\n\nلتتمكن من استخدام البوت، يرجى الاشتراك في القنوات التالية:"
+    @staticmethod
+    def init_default_data():
+        default_data = {
+            USERS_FILE: {},
+            CONTENT_FILE: {
+                "content": []
             },
-            "responses": {
-                "welcome": "*🎉 مرحباً!*\n\nتم قبول طلبك بنجاح ✅",
-                "rejected": "*❌ تم رفض طلبك*\n\nللمساعدة يرجى التواصل مع مدير البوت :/n/n@iomarsamara.",
-                "help": "*ℹ️ مركز المساعدة*\n\nللمساعدة يرجى التواصل مع مدير البوت.\n\n@iomarsamara",
-                "subscribe_success": "*✅ تم التحقق بنجاح!*\n\nيمكنك الآن استخدام البوت.",
-                "subscribe_failed": "*❌ فشل التحقق*\n\nلم يتم التحقق من اشتراكك بعد!\nيرجى الاشتراك في جميع القنوات المطلوبة."
+            CHANNELS_FILE: {
+                "channels": []  # قنوات البوت العادية
             },
-            "forwarding": {
-                "enabled": True  # تفعيل التحويل افتراضياً
-            }
-        },
-        REQUESTS_FILE: []
-    }
-    
-    for file_path, default_content in default_data.items():
-        if not os.path.exists(file_path):
-            with open(file_path, 'w', encoding='utf-8') as f:
-                json.dump(default_content, f, ensure_ascii=False, indent=2)
+            SUBSCRIPTION_CHANNELS_FILE: {
+                "channels": ["@ineswangy"]  # قنوات الاشتراك الإجباري فقط
+            },
+            SETTINGS_FILE: {
+                "subscription": {
+                    "enabled": False,
+                    "message": "📢 يجب الاشتراك في القناة أولاً لتتمكن من استخدام البوت"
+                },
+                "responses": {
+                    "welcome": "🎉 مرحباً! تم قبول طلبك بنجاح.\nيمكنك الآن استخدام البوت والاستفادة من محتوانا.",
+                    "rejected": "❌ تم رفض طلبك.\nللمساعدة تواصل مع مدير البوت : @iomarsamara",
+                    "help": "للأستفسار والتواصل /n/n @iomarsamara ℹ️",
+                    "subscribe_success": "✅ تم التحقق من اشتراكك بنجاح!",
+                    "subscribe_failed": "❌ لم يتم التحقق من اشتراكك بعد!"
+                },
+                "forwarding": {
+                    "enabled": True  # تفعيل التحويل افتراضياً
+                }
+            },
+            REQUESTS_FILE: []
+        }
+        
+        for file_path, default_content in default_data.items():
+            if not os.path.exists(file_path):
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(default_content, f, ensure_ascii=False, indent=2)
 
     @staticmethod
     def read_json(file_path):
@@ -299,7 +299,8 @@ class KeyboardManager:
     @staticmethod
     def get_user_keyboard():
         return ReplyKeyboardMarkup([
-            ["📺 قنوات نسونجي", "🔍 ID"],
+            ["📺 قنوات نسونجي"],
+            ["🔍 ID"],
             ["ℹ️ المساعدة"]
         ], resize_keyboard=True)
 
@@ -475,15 +476,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_key in users:
         user_data = users[user_key]
         if user_data.get("approved", False):
-            # التحقق من الاشتراك الإجباري
+            # التحقق من الاشتراك الإجباري - يستخدم قنوات الاشتراك الإجباري فقط
             if BotDatabase.get_setting("subscription.enabled"):
                 if not await check_subscription(user_id, context):
-                    channels = BotDatabase.get_subscription_channels()
+                    channels = BotDatabase.get_subscription_channels()  # استخدام القنوات الصحيحة
                     channels_text = "\n".join([f"• {ch}" for ch in channels])
                     
                     await update.message.reply_text(
                         f"{BotDatabase.get_setting('subscription.message')}\n\n"
-                        f"*القنوات المطلوبة:*\n{channels_text}\n\n"
+                        f"القنوات المطلوبة:\n{channels_text}\n\n"
                         "بعد الاشتراك، اضغط على /start مرة أخرى",
                         parse_mode='Markdown',
                         reply_markup=ReplyKeyboardMarkup([["✅ تحقق من الاشتراك"]], resize_keyboard=True)
@@ -493,21 +494,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # المستخدم مفعل وملتزم بالاشتراك
             if is_admin(user_id):
                 await update.message.reply_text(
-                    f"*👑 أهلاً بك يا {update.effective_user.first_name}\\!*\n\n"
-                    "*أنت مسجل كمشرف على البوت*\n\n"
-                    "*اختر من لوحة التحكم أدناه:*",
-                    parse_mode='MarkdownV2',
+                    f"👑 أهلاً بك يا {update.effective_user.first_name}!\n"
+                    "أنت مسجل كمشرف على البوت.\n\n"
+                    "اختر من لوحة التحكم أدناه:",
                     reply_markup=KeyboardManager.get_admin_keyboard()
                 )
             else:
                 await update.message.reply_text(
-                    f"*مرحباً بعودتك يا {update.effective_user.first_name} 👋*\n\n"
-                    "_يسرّنا رؤيتك مجدداً_\n\n"
+                    f"*مرحباً بعودتك يا {update.effective_user.first_name}! 👋*\n"
+                    "_يسرّنا رؤيتك مجدداً._\n\n"
                     "⬇️ *اختر أحد الأقسام أدناه للمتابعة:*",
                     parse_mode='Markdown',
                     reply_markup=KeyboardManager.get_user_keyboard()
                 )
-                
+                # تحويل إجراء بدء المحادثة
                 await forward_user_action(update, context, "بدء المحادثة", "قام المستخدم ببدء محادثة جديدة")
         else:
             # المستخدم غير مفعل
@@ -582,24 +582,21 @@ async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         await ask_for_content_id(update, context)
         await forward_user_action(update, context, "طلب إدخال ID", "قام المستخدم بطلب إدخال رقم المحتوى")
     elif text == "ℹ️ المساعدة":
-        await update.message.reply_text(
-            BotDatabase.get_setting("responses.help"),
-            parse_mode='Markdown'
-        )
+        await update.message.reply_text(BotDatabase.get_setting("responses.help"))
+        await forward_user_action(update, context, "طلب المساعدة", "قام المستخدم بطلب المساعدة")
     elif text == "✅ تحقق من الاشتراك":
         if await check_subscription(update.effective_user.id, context):
             await update.message.reply_text(
                 BotDatabase.get_setting("responses.subscribe_success"),
-                parse_mode='Markdown',
                 reply_markup=KeyboardManager.get_user_keyboard()
             )
+            await forward_user_action(update, context, "تحقق من الاشتراك", "نجح التحقق من الاشتراك")
         else:
-            channels = BotDatabase.get_subscription_channels()
+            channels = BotDatabase.get_subscription_channels()  # استخدام القنوات الصحيحة
             channels_text = "\n".join([f"• {ch}" for ch in channels])
             await update.message.reply_text(
                 f"{BotDatabase.get_setting('responses.subscribe_failed')}\n\n"
-                f"*يجب الاشتراك في:*\n{channels_text}",
-                parse_mode='Markdown'
+                f"يجب الاشتراك في:\n{channels_text}"
             )
             await forward_user_action(update, context, "تحقق من الاشتراك", "فشل التحقق من الاشتراك")
     elif text == "🏠 الرئيسية":
