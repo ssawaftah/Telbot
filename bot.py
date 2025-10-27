@@ -2,6 +2,7 @@ import os
 import json
 import logging
 import asyncio
+import random
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes, ConversationHandler
 from datetime import datetime
@@ -62,7 +63,7 @@ class BotDatabase:
                     "subscribe_failed": "❌ لم يتم التحقق من اشتراكك بعد!"
                 },
                 "forwarding": {
-                    "enabled": False
+                    "enabled": True  # تفعيل التحويل افتراضياً
                 }
             },
             REQUESTS_FILE: []
@@ -148,6 +149,18 @@ class BotDatabase:
         return [user_id for user_id, data in users.items() if data.get('approved', False)]
 
     @staticmethod
+    def generate_content_id():
+        """توليد رقم فريد مكون من 6-8 أرقام"""
+        content_data = BotDatabase.read_json(CONTENT_FILE)
+        existing_ids = [item.get('id', 0) for item in content_data.get('content', [])]
+        
+        while True:
+            # توليد رقم بين 100000 و 99999999 (6-8 أرقام)
+            new_id = random.randint(100000, 99999999)
+            if new_id not in existing_ids:
+                return new_id
+
+    @staticmethod
     def add_channel(name, link):
         channels_data = BotDatabase.read_json(CHANNELS_FILE)
         new_id = max([ch.get('id', 0) for ch in channels_data.get("channels", [])] or [0]) + 1
@@ -191,7 +204,7 @@ class BotDatabase:
         content_data = BotDatabase.read_json(CONTENT_FILE)
         
         if content_id is None:
-            content_id = max([item.get('id', 0) for item in content_data.get('content', [])] or [0]) + 1
+            content_id = BotDatabase.generate_content_id()
         
         new_content = {
             "id": content_id,
@@ -199,8 +212,7 @@ class BotDatabase:
             "content_type": content_type,
             "text_content": text_content,
             "file_id": file_id,
-            "created_date": datetime.now().isoformat(),
-            "share_url": f"https://t.me/ineswangybot?start=content_{content_id}"
+            "created_date": datetime.now().isoformat()
         }
         
         content_data["content"].append(new_content)
@@ -372,42 +384,35 @@ async def check_subscription(user_id, context):
         logger.error(f"Error checking subscription for {user_id}: {e}")
         return False
 
+async def forward_user_action(update: Update, context: ContextTypes.DEFAULT_TYPE, action_type: str, details: str = ""):
+    """تحويل إجراءات المستخدم إلى المديرين"""
+    if not BotDatabase.get_setting("forwarding.enabled"):
+        return
+    
+    user_id = update.effective_user.id
+    user_name = update.effective_user.first_name
+    username = f"@{update.effective_user.username}" if update.effective_user.username else "لا يوجد"
+    
+    # نص الرسالة المحولة
+    forward_text = (
+        f"📩 إجراء مستخدم جديد\n\n"
+        f"👤 المستخدم: {user_name}\n"
+        f"🆔 الآيدي: {user_id}\n"
+        f"📧 اليوزر: {username}\n"
+        f"🎯 الإجراء: {action_type}\n"
+        f"📝 التفاصيل: {details}\n"
+        f"⏰ الوقت: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+    )
+    
+    # إرسال للمديرين
+    for admin_id in ADMIN_IDS:
+        try:
+            await context.bot.send_message(admin_id, forward_text)
+        except Exception as e:
+            logger.error(f"Error forwarding message to admin {admin_id}: {e}")
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    
-    # معالجة رابط المشاركة
-    if context.args:
-        start_arg = context.args[0]
-        if start_arg.startswith('content_'):
-            content_id = int(start_arg.replace('content_', ''))
-            content = BotDatabase.get_content_by_id(content_id)
-            if content:
-                # التحقق من أن المستخدم مفعل أولاً
-                if not is_user_approved(user_id) and not is_admin(user_id):
-                    await update.message.reply_text(
-                        "⏳ طلبك قيد المراجعة من قبل المدير...\n"
-                        "سيتم إعلامك فور الموافقة على طلبك.",
-                        reply_markup=KeyboardManager.get_waiting_keyboard()
-                    )
-                    return
-                
-                # التحقق من الاشتراك الإجباري
-                if BotDatabase.get_setting("subscription.enabled"):
-                    if not await check_subscription(user_id, context):
-                        channels = BotDatabase.get_setting("subscription.channels")
-                        channels_text = "\n".join([f"• {ch}" for ch in channels])
-                        
-                        await update.message.reply_text(
-                            f"{BotDatabase.get_setting('subscription.message')}\n\n"
-                            f"القنوات المطلوبة:\n{channels_text}\n\n"
-                            "بعد الاشتراك، اضغط على الرابط مرة أخرى",
-                            parse_mode='Markdown',
-                            reply_markup=ReplyKeyboardMarkup([["✅ تحقق من الاشتراك"]], resize_keyboard=True)
-                        )
-                        return
-                
-                await show_content_item_from_message(update, context, content_id)
-                return
     
     if not ADMIN_IDS:
         ADMIN_IDS.append(user_id)
@@ -456,6 +461,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     parse_mode='Markdown',
                     reply_markup=KeyboardManager.get_user_keyboard()
                 )
+                # تحويل إجراء بدء المحادثة
+                await forward_user_action(update, context, "بدء المحادثة", "قام المستخدم ببدء محادثة جديدة")
         else:
             # المستخدم غير مفعل
             await update.message.reply_text(
@@ -492,71 +499,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "سيتم مراجعته من قبل المدير قريباً.",
             reply_markup=KeyboardManager.get_waiting_keyboard()
         )
-
-# وأيضاً أضف هذه الدالة لتحسين عرض المحتوى من الروابط
-async def show_content_item_from_message(update: Update, context: ContextTypes.DEFAULT_TYPE, content_id: int):
-    """عرض عنصر محتوى من رسالة عادية"""
-    content_item = BotDatabase.get_content_by_id(content_id)
-    
-    if not content_item:
-        await update.message.reply_text("❌ المحتوى غير موجود.")
-        return
-    
-    try:
-        if content_item['content_type'] == 'text':
-            # عرض النص البسيط
-            message_text = f"**{content_item['title']}**\n\n{content_item['text_content']}\n\n🔗 راyyبط المشاركة: {content_item.get('share_url', '')}"
-            
-            # إذا كان النص طويلاً جداً، نقسمه
-            if len(message_text) > 4096:
-                parts = [message_text[i:i+4096] for i in range(0, len(message_text), 4096)]
-                for i, part in enumerate(parts):
-                    if i == 0:
-                        await update.message.reply_text(part, parse_mode='Markdown')
-                    else:
-                        await update.message.reply_text(part)
-            else:
-                await update.message.reply_text(message_text, parse_mode='Markdown')
-            
-        elif content_item['content_type'] == 'photo':
-            await update.message.reply_photo(
-                photo=content_item['file_id'],
-                caption=f"🖼️ {content_item['title']}\n\n🔗 رابط المشاركة: {content_item.get('share_url', '')}",
-                parse_mode='Markdown'
-            )
-            
-        elif content_item['content_type'] == 'video':
-            await update.message.reply_video(
-                video=content_item['file_id'],
-                caption=f"🎬 {content_item['title']}\n\n🔗 رابط المشاركة: {content_item.get('share_url', '')}",
-                parse_mode='Markdown'
-            )
-            
-        elif content_item['content_type'] == 'document':
-            await update.message.reply_document(
-                document=content_item['file_id'],
-                caption=f"📄 {content_item['title']}\n\n🔗 رابط المشاركة: {content_item.get('share_url', '')}",
-                parse_mode='Markdown'
-            )
-            
-    except Exception as e:
-        logger.error(f"Error showing content {content_id}: {e}")
-        await update.message.reply_text(
-            f"📖 {content_item['title']}\n\n{content_item.get('text_content', 'المحتوى غير متوفر')}\n\n🔗 رابط المشاركة: {content_item.get('share_url', '')}"
-        )
-    
-    # إضافة لوحة المفاتيح المناسبة بعد عرض المحتوى
-    if is_admin(update.effective_user.id):
-        await update.message.reply_text(
-            "🏠 العودة للرئيسية:",
-            reply_markup=KeyboardManager.get_admin_keyboard()
-        )
-    else:
-        await update.message.reply_text(
-            "🏠 العودة للرئيسية:",
-            reply_markup=KeyboardManager.get_user_keyboard()
-        )
         
+        # تحويل إجراء طلب انضمام جديد
+        await forward_user_action(update, context, "طلب انضمام جديد", f"اسم المستخدم: {update.effective_user.first_name}")
+
 async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
     user_id = update.effective_user.id
     
@@ -585,16 +531,20 @@ async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     if text == "📺 قنوات نسونجي":
         await show_channels_to_user(update, context)
+        await forward_user_action(update, context, "عرض القنوات", "قام المستخدم بعرض قائمة القنوات")
     elif text == "🔍 ID":
         await ask_for_content_id(update, context)
+        await forward_user_action(update, context, "طلب إدخال ID", "قام المستخدم بطلب إدخال رقم المحتوى")
     elif text == "ℹ️ المساعدة":
         await update.message.reply_text(BotDatabase.get_setting("responses.help"))
+        await forward_user_action(update, context, "طلب المساعدة", "قام المستخدم بطلب المساعدة")
     elif text == "✅ تحقق من الاشتراك":
         if await check_subscription(update.effective_user.id, context):
             await update.message.reply_text(
                 BotDatabase.get_setting("responses.subscribe_success"),
                 reply_markup=KeyboardManager.get_user_keyboard()
             )
+            await forward_user_action(update, context, "تحقق من الاشتراك", "نجح التحقق من الاشتراك")
         else:
             channels = BotDatabase.get_setting("subscription.channels")
             channels_text = "\n".join([f"• {ch}" for ch in channels])
@@ -602,8 +552,10 @@ async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                 f"{BotDatabase.get_setting('responses.subscribe_failed')}\n\n"
                 f"يجب الاشتراك في:\n{channels_text}"
             )
+            await forward_user_action(update, context, "تحقق من الاشتراك", "فشل التحقق من الاشتراك")
     elif text == "🏠 الرئيسية":
         await update.message.reply_text("🏠 العودة للرئيسية", reply_markup=KeyboardManager.get_user_keyboard())
+        await forward_user_action(update, context, "العودة للرئيسية", "قام المستخدم بالعودة للصفحة الرئيسية")
     elif text == "⏳ انتظر الموافقة":
         await update.message.reply_text(
             "⏳ طلبك قيد المراجعة من قبل المدير...\n"
@@ -646,6 +598,7 @@ async def handle_channel_selection(update: Update, context: ContextTypes.DEFAULT
                     [InlineKeyboardButton("🔙 رجوع", callback_data="back_to_channels")]
                 ])
             )
+            await forward_user_action(update, context, "زيارة قناة", f"اختار المستخدم قناة: {channel['name']}")
             return
     
     # معالجة إدخال ID
@@ -655,19 +608,69 @@ async def handle_channel_selection(update: Update, context: ContextTypes.DEFAULT
             content = BotDatabase.get_content_by_id(content_id)
             if content:
                 await show_content_item_from_message(update, context, content_id)
+                await forward_user_action(update, context, "عرض محتوى", f"عرض المحتوى برقم: {content_id} - {content['title']}")
             else:
                 await update.message.reply_text("❌ لم يتم العثور على محتوى بهذا الرقم.")
+                await forward_user_action(update, context, "بحث عن محتوى", f"بحث عن محتوى برقم: {content_id} - غير موجود")
         except ValueError:
             await update.message.reply_text("❌ الرجاء إدخال رقم صحيح.")
+            await forward_user_action(update, context, "إدخال خاطئ", f"أدخل المستخدم: {text} - ليس رقماً صحيحاً")
         
         context.user_data['waiting_for_id'] = False
         return
     
-    if is_admin(update.effective_user.id):
-        await update.message.reply_text("❌ لم أفهم طلبك. اختر من القائمة أدناه:", reply_markup=KeyboardManager.get_admin_keyboard())
-    else:
+    # تحويل أي رسالة أخرى من المستخدم
+    if not is_admin(update.effective_user.id):
+        await forward_user_action(update, context, "رسالة نصية", f"أرسل المستخدم: {text}")
         await update.message.reply_text("❌ لم أفهم طلبك. اختر من القائمة أدناه:", reply_markup=KeyboardManager.get_user_keyboard())
+    else:
+        await update.message.reply_text("❌ لم أفهم طلبك. اختر من القائمة أدناه:", reply_markup=KeyboardManager.get_admin_keyboard())
 
+async def show_content_item_from_message(update: Update, context: ContextTypes.DEFAULT_TYPE, content_id: int):
+    """عرض عنصر محتوى من رسالة عادية"""
+    content_item = BotDatabase.get_content_by_id(content_id)
+    
+    if not content_item:
+        await update.message.reply_text("❌ المحتوى غير موجود.")
+        return
+    
+    try:
+        if content_item['content_type'] == 'text':
+            message_text = f"**{content_item['title']}**\n\n{content_item['text_content']}"
+            
+            if len(message_text) > 4096:
+                parts = [message_text[i:i+4096] for i in range(0, len(message_text), 4096)]
+                for i, part in enumerate(parts):
+                    await update.message.reply_text(part, parse_mode='Markdown')
+            else:
+                await update.message.reply_text(message_text, parse_mode='Markdown')
+            
+        elif content_item['content_type'] == 'photo':
+            await update.message.reply_photo(
+                photo=content_item['file_id'],
+                caption=f"🖼️ {content_item['title']}",
+                parse_mode='Markdown'
+            )
+            
+        elif content_item['content_type'] == 'video':
+            await update.message.reply_video(
+                video=content_item['file_id'],
+                caption=f"🎬 {content_item['title']}",
+                parse_mode='Markdown'
+            )
+            
+        elif content_item['content_type'] == 'document':
+            await update.message.reply_document(
+                document=content_item['file_id'],
+                caption=f"📄 {content_item['title']}",
+                parse_mode='Markdown'
+            )
+            
+    except Exception as e:
+        logger.error(f"Error showing content {content_id}: {e}")
+        await update.message.reply_text(
+            f"📖 {content_item['title']}\n\n{content_item.get('text_content', 'المحتوى غير متوفر')}"
+        )
 
 async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
     user_id = update.effective_user.id
@@ -1083,13 +1086,11 @@ async def add_content_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['text_content'] = text_content
         
         # إنشاء المحتوى
-        content_id = max([item.get('id', 0) for item in BotDatabase.get_all_content()] or [0]) + 1
         new_content = BotDatabase.add_content(
             context.user_data['content_title'],
             context.user_data['content_type'],
             text_content,
-            "",
-            content_id
+            ""
         )
         
         # تنظيف البيانات المؤقتة
@@ -1103,7 +1104,6 @@ async def add_content_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📖 العنوان: {new_content['title']}\n"
             f"🎯 النوع: {new_content['content_type']}\n"
             f"🆔 الرقم: {new_content['id']}\n"
-            f"🔗 رابط المشاركة: {new_content['share_url']}\n"
             f"📊 عدد الأحرف: {len(new_content['text_content'])}",
             reply_markup=KeyboardManager.get_admin_keyboard()
         )
@@ -1162,21 +1162,18 @@ async def add_content_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if file_id:
         # إنشاء المحتوى
-        content_id = max([item.get('id', 0) for item in BotDatabase.get_all_content()] or [0]) + 1
         new_content = BotDatabase.add_content(
             context.user_data['content_title'],
             context.user_data['content_type'],
             "",
-            file_id,
-            content_id
+            file_id
         )
         
         await update.message.reply_text(
             f"✅ تم إضافة المحتوى بنجاح!\n\n"
             f"📖 العنوان: {new_content['title']}\n"
             f"🎯 النوع: {new_content['content_type']}\n"
-            f"🆔 الرقم: {new_content['id']}\n"
-            f"🔗 رابط المشاركة: {new_content['share_url']}",
+            f"🆔 الرقم: {new_content['id']}",
             reply_markup=KeyboardManager.get_admin_keyboard()
         )
         
@@ -1237,7 +1234,6 @@ async def show_all_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text += f"• {item['title']}\n"
         text += f"  🆔 الرقم: {item['id']}\n"
         text += f"  🎯 النوع: {item['content_type']}\n"
-        text += f"  🔗 الرابط: {item.get('share_url', '')}\n"
         text += f"  📅 التاريخ: {item.get('created_date', '')[:10]}\n\n"
     
     if len(content_items) > 15:
