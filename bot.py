@@ -382,6 +382,30 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             content_id = int(start_arg.replace('content_', ''))
             content = BotDatabase.get_content_by_id(content_id)
             if content:
+                # التحقق من أن المستخدم مفعل أولاً
+                if not is_user_approved(user_id) and not is_admin(user_id):
+                    await update.message.reply_text(
+                        "⏳ طلبك قيد المراجعة من قبل المدير...\n"
+                        "سيتم إعلامك فور الموافقة على طلبك.",
+                        reply_markup=KeyboardManager.get_waiting_keyboard()
+                    )
+                    return
+                
+                # التحقق من الاشتراك الإجباري
+                if BotDatabase.get_setting("subscription.enabled"):
+                    if not await check_subscription(user_id, context):
+                        channels = BotDatabase.get_setting("subscription.channels")
+                        channels_text = "\n".join([f"• {ch}" for ch in channels])
+                        
+                        await update.message.reply_text(
+                            f"{BotDatabase.get_setting('subscription.message')}\n\n"
+                            f"القنوات المطلوبة:\n{channels_text}\n\n"
+                            "بعد الاشتراك، اضغط على الرابط مرة أخرى",
+                            parse_mode='Markdown',
+                            reply_markup=ReplyKeyboardMarkup([["✅ تحقق من الاشتراك"]], resize_keyboard=True)
+                        )
+                        return
+                
                 await show_content_item_from_message(update, context, content_id)
                 return
     
@@ -469,6 +493,70 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=KeyboardManager.get_waiting_keyboard()
         )
 
+# وأيضاً أضف هذه الدالة لتحسين عرض المحتوى من الروابط
+async def show_content_item_from_message(update: Update, context: ContextTypes.DEFAULT_TYPE, content_id: int):
+    """عرض عنصر محتوى من رسالة عادية"""
+    content_item = BotDatabase.get_content_by_id(content_id)
+    
+    if not content_item:
+        await update.message.reply_text("❌ المحتوى غير موجود.")
+        return
+    
+    try:
+        if content_item['content_type'] == 'text':
+            # عرض النص البسيط
+            message_text = f"**{content_item['title']}**\n\n{content_item['text_content']}\n\n🔗 رابط المشاركة: {content_item.get('share_url', '')}"
+            
+            # إذا كان النص طويلاً جداً، نقسمه
+            if len(message_text) > 4096:
+                parts = [message_text[i:i+4096] for i in range(0, len(message_text), 4096)]
+                for i, part in enumerate(parts):
+                    if i == 0:
+                        await update.message.reply_text(part, parse_mode='Markdown')
+                    else:
+                        await update.message.reply_text(part)
+            else:
+                await update.message.reply_text(message_text, parse_mode='Markdown')
+            
+        elif content_item['content_type'] == 'photo':
+            await update.message.reply_photo(
+                photo=content_item['file_id'],
+                caption=f"🖼️ {content_item['title']}\n\n🔗 رابط المشاركة: {content_item.get('share_url', '')}",
+                parse_mode='Markdown'
+            )
+            
+        elif content_item['content_type'] == 'video':
+            await update.message.reply_video(
+                video=content_item['file_id'],
+                caption=f"🎬 {content_item['title']}\n\n🔗 رابط المشاركة: {content_item.get('share_url', '')}",
+                parse_mode='Markdown'
+            )
+            
+        elif content_item['content_type'] == 'document':
+            await update.message.reply_document(
+                document=content_item['file_id'],
+                caption=f"📄 {content_item['title']}\n\n🔗 رابط المشاركة: {content_item.get('share_url', '')}",
+                parse_mode='Markdown'
+            )
+            
+    except Exception as e:
+        logger.error(f"Error showing content {content_id}: {e}")
+        await update.message.reply_text(
+            f"📖 {content_item['title']}\n\n{content_item.get('text_content', 'المحتوى غير متوفر')}\n\n🔗 رابط المشاركة: {content_item.get('share_url', '')}"
+        )
+    
+    # إضافة لوحة المفاتيح المناسبة بعد عرض المحتوى
+    if is_admin(update.effective_user.id):
+        await update.message.reply_text(
+            "🏠 العودة للرئيسية:",
+            reply_markup=KeyboardManager.get_admin_keyboard()
+        )
+    else:
+        await update.message.reply_text(
+            "🏠 العودة للرئيسية:",
+            reply_markup=KeyboardManager.get_user_keyboard()
+        )
+        
 async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
     user_id = update.effective_user.id
     
@@ -580,50 +668,6 @@ async def handle_channel_selection(update: Update, context: ContextTypes.DEFAULT
     else:
         await update.message.reply_text("❌ لم أفهم طلبك. اختر من القائمة أدناه:", reply_markup=KeyboardManager.get_user_keyboard())
 
-async def show_content_item_from_message(update: Update, context: ContextTypes.DEFAULT_TYPE, content_id: int):
-    """عرض عنصر محتوى من رسالة عادية"""
-    content_item = BotDatabase.get_content_by_id(content_id)
-    
-    if not content_item:
-        await update.message.reply_text("❌ المحتوى غير موجود.")
-        return
-    
-    try:
-        if content_item['content_type'] == 'text':
-            # عرض النص البسيط
-            message_text = f"**{content_item['title']}**\n\n{content_item['text_content']}\n\n🔗 رابط المشاركة: {content_item.get('share_url', '')}"
-            
-            # إذا كان النص طويلاً جداً، نقسمه
-            if len(message_text) > 4096:
-                parts = [message_text[i:i+4096] for i in range(0, len(message_text), 4096)]
-                for i, part in enumerate(parts):
-                    await update.message.reply_text(part)
-            else:
-                await update.message.reply_text(message_text)
-            
-        elif content_item['content_type'] == 'photo':
-            await update.message.reply_photo(
-                photo=content_item['file_id'],
-                caption=f"🖼️ {content_item['title']}\n\n🔗 رابط المشاركة: {content_item.get('share_url', '')}"
-            )
-            
-        elif content_item['content_type'] == 'video':
-            await update.message.reply_video(
-                video=content_item['file_id'],
-                caption=f"🎬 {content_item['title']}\n\n🔗 رابط المشاركة: {content_item.get('share_url', '')}"
-            )
-            
-        elif content_item['content_type'] == 'document':
-            await update.message.reply_document(
-                document=content_item['file_id'],
-                caption=f"📄 {content_item['title']}\n\n🔗 رابط المشاركة: {content_item.get('share_url', '')}"
-            )
-            
-    except Exception as e:
-        logger.error(f"Error showing content {content_id}: {e}")
-        await update.message.reply_text(
-            f"📖 {content_item['title']}\n\n{content_item.get('text_content', 'المحتوى غير متوفر')}\n\n🔗 رابط المشاركة: {content_item.get('share_url', '')}"
-        )
 
 async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
     user_id = update.effective_user.id
