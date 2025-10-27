@@ -430,7 +430,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_key in users:
         user_data = users[user_key]
         if user_data.get("approved", False):
-            # التحقق من الاشتراك الإجباري
+            # التحقق من الاشتراك الإجباري - يستخدم قنوات الاشتراك الإجباري فقط
             if BotDatabase.get_setting("subscription.enabled"):
                 if not await check_subscription(user_id, context):
                     channels = BotDatabase.get_setting("subscription.channels")
@@ -502,7 +502,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # تحويل إجراء طلب انضمام جديد
         await forward_user_action(update, context, "طلب انضمام جديد", f"اسم المستخدم: {update.effective_user.first_name}")
-
 async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
     user_id = update.effective_user.id
     
