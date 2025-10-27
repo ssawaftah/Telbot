@@ -1182,211 +1182,6 @@ async def show_all_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(text)
 
-# باقي الدوال (إدارة الاشتراك الإجباري، الإعدادات، البث، النسخ الاحتياطي) تبقى كما هي
-# ... [الكود المتبقي يبقى كما هو مع تعديلات بسيطة للتكيف مع التغييرات]
-
-async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    data = query.data
-    user_id = update.effective_user.id
-    
-    # التحقق من أن المستخدم مفعل
-    if not is_user_approved(user_id) and not is_admin(user_id):
-        await query.edit_message_text(
-            "⏳ طلبك قيد المراجعة من قبل المدير...\n"
-            "سيتم إعلامك فور الموافقة على طلبك."
-        )
-        return
-    
-    if data.startswith("content_"):
-        content_id = int(data.split("_")[1])
-        await show_content_item_from_message(update, context, content_id)
-    elif data == "back_to_channels":
-        await show_channels_to_user(update, context)
-    elif data == "back_to_main":
-        if is_admin(user_id):
-            await query.edit_message_text("🏠 العودة للرئيسية", reply_markup=KeyboardManager.get_admin_keyboard())
-        else:
-            await query.edit_message_text("🏠 العودة للرئيسية", reply_markup=KeyboardManager.get_user_keyboard())
-    elif not is_admin(user_id):
-        await query.edit_message_text("❌ ليس لديك صلاحية للقيام بهذا الإجراء.")
-        return
-    elif data.startswith("accept_"):
-        target_user = data.split("_")[1]
-        await accept_user_callback(update, context, target_user)
-    elif data.startswith("reject_"):
-        target_user = data.split("_")[1]
-        await reject_user_callback(update, context, target_user)
-    elif data == "view_requests":
-        await show_pending_requests(update, context)
-
-async def accept_user_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, target_user_id: str):
-    users = BotDatabase.read_json(USERS_FILE)
-    
-    if target_user_id in users:
-        users[target_user_id]["approved"] = True
-        BotDatabase.write_json(USERS_FILE, users)
-        
-        requests = BotDatabase.read_json(REQUESTS_FILE)
-        requests = [r for r in requests if r['user_id'] != target_user_id]
-        BotDatabase.write_json(REQUESTS_FILE, requests)
-        
-        try:
-            await context.bot.send_message(
-                int(target_user_id),
-                BotDatabase.get_setting("responses.welcome"),
-                reply_markup=KeyboardManager.get_user_keyboard()
-            )
-        except Exception as e:
-            logger.error(f"Error sending message to user: {e}")
-        
-        await update.callback_query.edit_message_text(f"✅ تم قبول المستخدم: {users[target_user_id]['first_name']}")
-    else:
-        await update.callback_query.edit_message_text("❌ المستخدم غير موجود")
-
-async def reject_user_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, target_user_id: str):
-    users = BotDatabase.read_json(USERS_FILE)
-    
-    if target_user_id in users:
-        user_name = users[target_user_id]['first_name']
-        
-        try:
-            await context.bot.send_message(int(target_user_id), BotDatabase.get_setting("responses.rejected"))
-        except Exception as e:
-            logger.error(f"Error sending message to user: {e}")
-        
-        del users[target_user_id]
-        BotDatabase.write_json(USERS_FILE, users)
-        
-        requests = BotDatabase.read_json(REQUESTS_FILE)
-        requests = [r for r in requests if r['user_id'] != target_user_id]
-        BotDatabase.write_json(REQUESTS_FILE, requests)
-        
-        await update.callback_query.edit_message_text(f"❌ تم رفض المستخدم: {user_name}")
-    else:
-        await update.callback_query.edit_message_text("❌ المستخدم غير موجود")
-
-def main():
-    # التحقق من وجود التوكن
-    if BOT_TOKEN == 'YOUR_BOT_TOKEN_HERE':
-        print("❌ لم يتم تعيين التوكن! يرجى تعيين متغير البيئة BOT_TOKEN")
-        return
-    
-    BotDatabase.init_default_data()
-    
-    application = Application.builder().token(BOT_TOKEN).build()
-    
-    # محادثات المدير
-    add_channel_conv = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex("^➕ إضافة قناة$"), start_add_channel)],
-        states={
-            ADD_CHANNEL_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_channel_name)],
-            ADD_CHANNEL_LINK: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_channel_link)],
-        },
-        fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
-    )
-    
-    delete_channel_conv = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex("^🗑️ حذف قناة$"), start_delete_channel)],
-        states={
-            DELETE_CHANNEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, delete_channel)],
-        },
-        fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
-    )
-    
-    add_content_conv = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex("^➕ إضافة محتوى$"), start_add_content)],
-        states={
-            ADD_CONTENT_TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_content_title)],
-            ADD_CONTENT_TYPE: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_content_type)],
-            ADD_CONTENT_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_content_text)],
-            ADD_CONTENT_FILE: [MessageHandler(filters.PHOTO | filters.VIDEO | filters.Document.ALL, add_content_file)],
-        },
-        fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
-    )
-    
-    delete_content_conv = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex("^🗑️ حذف محتوى$"), start_delete_content)],
-        states={
-            DELETE_CONTENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, delete_content)],
-        },
-        fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
-    )
-    
-        delete_user_conv = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex("^🗑️ حذف مستخدم$"), start_delete_user)],
-        states={
-            DELETE_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, delete_user)],
-        },
-        fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
-    )
-    
-    subscription_conv = ConversationHandler(
-        entry_points=[
-            MessageHandler(filters.Regex("^✏️ تعديل الرسالة$"), start_edit_subscription_message),
-            MessageHandler(filters.Regex("^📝 إضافة قناة$"), start_add_subscription_channel),
-            MessageHandler(filters.Regex("^🗑️ حذف قناة$"), start_delete_subscription_channel),
-        ],
-        states={
-            EDIT_SUBSCRIPTION_MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_subscription_message)],
-            ADD_SUBSCRIPTION_CHANNEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_subscription_channel)],
-            DELETE_SUBSCRIPTION_CHANNEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, delete_subscription_channel)],
-        },
-        fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
-    )
-    
-    settings_conv = ConversationHandler(
-        entry_points=[
-            MessageHandler(filters.Regex("^✏️ تعديل رسالة الترحيب$"), lambda u, c: start_edit_response(u, c, "welcome")),
-            MessageHandler(filters.Regex("^✏️ تعديل رسالة الرفض$"), lambda u, c: start_edit_response(u, c, "rejected")),
-            MessageHandler(filters.Regex("^✏️ تعديل رسالة المساعدة$"), lambda u, c: start_edit_response(u, c, "help")),
-        ],
-        states={
-            EDIT_RESPONSE: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_response)],
-        },
-        fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
-    )
-    
-    broadcast_conv = ConversationHandler(
-        entry_points=[
-            MessageHandler(filters.Regex("^📢 بث لجميع المستخدمين$"), start_broadcast),
-            MessageHandler(filters.Regex("^👤 بث لمستخدم محدد$"), start_send_to_user),
-        ],
-        states={
-            BROADCAST_MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, broadcast_message)],
-            SEND_TO_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, send_to_user)],
-        },
-        fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
-    )
-    
-    backup_conv = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex("^🔄 رفع نسخة$"), start_restore_backup)],
-        states={
-            BACKUP_RESTORE: [MessageHandler(filters.Document.ALL, restore_backup)],
-        },
-        fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
-    )
-    
-    # إضافة جميع handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(add_channel_conv)
-    application.add_handler(delete_channel_conv)
-    application.add_handler(add_content_conv)
-    application.add_handler(delete_content_conv)
-    application.add_handler(delete_user_conv)
-    application.add_handler(subscription_conv)
-    application.add_handler(settings_conv)
-    application.add_handler(broadcast_conv)
-    application.add_handler(backup_conv)
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    application.add_handler(CallbackQueryHandler(handle_callback))
-    
-    print("🤖 البوت يعمل...")
-    application.run_polling()
-
-# باقي الدوال التي تحتاج لإكمالها
 async def show_subscription_management(update: Update, context: ContextTypes.DEFAULT_TYPE):
     enabled = BotDatabase.get_setting("subscription.enabled")
     channels = BotDatabase.get_setting("subscription.channels")
@@ -1755,6 +1550,207 @@ async def show_backups(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     
     await update.message.reply_text(text, reply_markup=KeyboardManager.get_backup_keyboard())
+
+async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    data = query.data
+    user_id = update.effective_user.id
+    
+    # التحقق من أن المستخدم مفعل
+    if not is_user_approved(user_id) and not is_admin(user_id):
+        await query.edit_message_text(
+            "⏳ طلبك قيد المراجعة من قبل المدير...\n"
+            "سيتم إعلامك فور الموافقة على طلبك."
+        )
+        return
+    
+    if data.startswith("content_"):
+        content_id = int(data.split("_")[1])
+        await show_content_item_from_message(update, context, content_id)
+    elif data == "back_to_channels":
+        await show_channels_to_user(update, context)
+    elif data == "back_to_main":
+        if is_admin(user_id):
+            await query.edit_message_text("🏠 العودة للرئيسية", reply_markup=KeyboardManager.get_admin_keyboard())
+        else:
+            await query.edit_message_text("🏠 العودة للرئيسية", reply_markup=KeyboardManager.get_user_keyboard())
+    elif not is_admin(user_id):
+        await query.edit_message_text("❌ ليس لديك صلاحية للقيام بهذا الإجراء.")
+        return
+    elif data.startswith("accept_"):
+        target_user = data.split("_")[1]
+        await accept_user_callback(update, context, target_user)
+    elif data.startswith("reject_"):
+        target_user = data.split("_")[1]
+        await reject_user_callback(update, context, target_user)
+    elif data == "view_requests":
+        await show_pending_requests(update, context)
+
+async def accept_user_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, target_user_id: str):
+    users = BotDatabase.read_json(USERS_FILE)
+    
+    if target_user_id in users:
+        users[target_user_id]["approved"] = True
+        BotDatabase.write_json(USERS_FILE, users)
+        
+        requests = BotDatabase.read_json(REQUESTS_FILE)
+        requests = [r for r in requests if r['user_id'] != target_user_id]
+        BotDatabase.write_json(REQUESTS_FILE, requests)
+        
+        try:
+            await context.bot.send_message(
+                int(target_user_id),
+                BotDatabase.get_setting("responses.welcome"),
+                reply_markup=KeyboardManager.get_user_keyboard()
+            )
+        except Exception as e:
+            logger.error(f"Error sending message to user: {e}")
+        
+        await update.callback_query.edit_message_text(f"✅ تم قبول المستخدم: {users[target_user_id]['first_name']}")
+    else:
+        await update.callback_query.edit_message_text("❌ المستخدم غير موجود")
+
+async def reject_user_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, target_user_id: str):
+    users = BotDatabase.read_json(USERS_FILE)
+    
+    if target_user_id in users:
+        user_name = users[target_user_id]['first_name']
+        
+        try:
+            await context.bot.send_message(int(target_user_id), BotDatabase.get_setting("responses.rejected"))
+        except Exception as e:
+            logger.error(f"Error sending message to user: {e}")
+        
+        del users[target_user_id]
+        BotDatabase.write_json(USERS_FILE, users)
+        
+        requests = BotDatabase.read_json(REQUESTS_FILE)
+        requests = [r for r in requests if r['user_id'] != target_user_id]
+        BotDatabase.write_json(REQUESTS_FILE, requests)
+        
+        await update.callback_query.edit_message_text(f"❌ تم رفض المستخدم: {user_name}")
+    else:
+        await update.callback_query.edit_message_text("❌ المستخدم غير موجود")
+
+def main():
+    # التحقق من وجود التوكن
+    if BOT_TOKEN == 'YOUR_BOT_TOKEN_HERE':
+        print("❌ لم يتم تعيين التوكن! يرجى تعيين متغير البيئة BOT_TOKEN")
+        return
+    
+    BotDatabase.init_default_data()
+    
+    application = Application.builder().token(BOT_TOKEN).build()
+    
+    # محادثات المدير
+    add_channel_conv = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex("^➕ إضافة قناة$"), start_add_channel)],
+        states={
+            ADD_CHANNEL_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_channel_name)],
+            ADD_CHANNEL_LINK: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_channel_link)],
+        },
+        fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
+    )
+    
+    delete_channel_conv = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex("^🗑️ حذف قناة$"), start_delete_channel)],
+        states={
+            DELETE_CHANNEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, delete_channel)],
+        },
+        fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
+    )
+    
+    add_content_conv = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex("^➕ إضافة محتوى$"), start_add_content)],
+        states={
+            ADD_CONTENT_TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_content_title)],
+            ADD_CONTENT_TYPE: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_content_type)],
+            ADD_CONTENT_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_content_text)],
+            ADD_CONTENT_FILE: [MessageHandler(filters.PHOTO | filters.VIDEO | filters.Document.ALL, add_content_file)],
+        },
+        fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
+    )
+    
+    delete_content_conv = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex("^🗑️ حذف محتوى$"), start_delete_content)],
+        states={
+            DELETE_CONTENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, delete_content)],
+        },
+        fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
+    )
+    
+    delete_user_conv = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex("^🗑️ حذف مستخدم$"), start_delete_user)],
+        states={
+            DELETE_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, delete_user)],
+        },
+        fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
+    )
+    
+    subscription_conv = ConversationHandler(
+        entry_points=[
+            MessageHandler(filters.Regex("^✏️ تعديل الرسالة$"), start_edit_subscription_message),
+            MessageHandler(filters.Regex("^📝 إضافة قناة$"), start_add_subscription_channel),
+            MessageHandler(filters.Regex("^🗑️ حذف قناة$"), start_delete_subscription_channel),
+        ],
+        states={
+            EDIT_SUBSCRIPTION_MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_subscription_message)],
+            ADD_SUBSCRIPTION_CHANNEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_subscription_channel)],
+            DELETE_SUBSCRIPTION_CHANNEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, delete_subscription_channel)],
+        },
+        fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
+    )
+    
+    settings_conv = ConversationHandler(
+        entry_points=[
+            MessageHandler(filters.Regex("^✏️ تعديل رسالة الترحيب$"), lambda u, c: start_edit_response(u, c, "welcome")),
+            MessageHandler(filters.Regex("^✏️ تعديل رسالة الرفض$"), lambda u, c: start_edit_response(u, c, "rejected")),
+            MessageHandler(filters.Regex("^✏️ تعديل رسالة المساعدة$"), lambda u, c: start_edit_response(u, c, "help")),
+        ],
+        states={
+            EDIT_RESPONSE: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_response)],
+        },
+        fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
+    )
+    
+    broadcast_conv = ConversationHandler(
+        entry_points=[
+            MessageHandler(filters.Regex("^📢 بث لجميع المستخدمين$"), start_broadcast),
+            MessageHandler(filters.Regex("^👤 بث لمستخدم محدد$"), start_send_to_user),
+        ],
+        states={
+            BROADCAST_MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, broadcast_message)],
+            SEND_TO_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, send_to_user)],
+        },
+        fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
+    )
+    
+    backup_conv = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex("^🔄 رفع نسخة$"), start_restore_backup)],
+        states={
+            BACKUP_RESTORE: [MessageHandler(filters.Document.ALL, restore_backup)],
+        },
+        fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
+    )
+    
+    # إضافة جميع handlers
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(add_channel_conv)
+    application.add_handler(delete_channel_conv)
+    application.add_handler(add_content_conv)
+    application.add_handler(delete_content_conv)
+    application.add_handler(delete_user_conv)
+    application.add_handler(subscription_conv)
+    application.add_handler(settings_conv)
+    application.add_handler(broadcast_conv)
+    application.add_handler(backup_conv)
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    application.add_handler(CallbackQueryHandler(handle_callback))
+    
+    print("🤖 البوت يعمل...")
+    application.run_polling()
 
 if __name__ == "__main__":
     main()
