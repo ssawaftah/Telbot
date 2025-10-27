@@ -19,9 +19,9 @@ ADMIN_IDS = []  # سيتم إضافة المدير تلقائياً
 
 # حالات المحادثة
 (
-    ADD_CATEGORY_NAME,
-    ADD_CONTENT_TITLE, ADD_CONTENT_TYPE, ADD_CONTENT_FILE, ADD_CONTENT_CATEGORY, ADD_CONTENT_TEXT,
-    DELETE_USER, DELETE_CATEGORY, DELETE_CONTENT,
+    ADD_CHANNEL_NAME, ADD_CHANNEL_LINK,
+    ADD_CONTENT_TITLE, ADD_CONTENT_TYPE, ADD_CONTENT_FILE, ADD_CONTENT_TEXT,
+    DELETE_USER, DELETE_CHANNEL, DELETE_CONTENT,
     EDIT_RESPONSE, EDIT_SUBSCRIPTION_MESSAGE, ADD_SUBSCRIPTION_CHANNEL, DELETE_SUBSCRIPTION_CHANNEL,
     BROADCAST_MESSAGE, SEND_TO_USER,
     BACKUP_RESTORE
@@ -33,6 +33,7 @@ os.makedirs(DATA_DIR, exist_ok=True)
 
 USERS_FILE = os.path.join(DATA_DIR, "users.json")
 CONTENT_FILE = os.path.join(DATA_DIR, "content.json")
+CHANNELS_FILE = os.path.join(DATA_DIR, "channels.json")
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 REQUESTS_FILE = os.path.join(DATA_DIR, "requests.json")
 
@@ -42,12 +43,10 @@ class BotDatabase:
         default_data = {
             USERS_FILE: {},
             CONTENT_FILE: {
-                "categories": [
-                    {"id": 1, "name": "القصص والروايات", "created_date": datetime.now().isoformat()},
-                    {"id": 2, "name": "الفيديوهات", "created_date": datetime.now().isoformat()},
-                    {"id": 3, "name": "الصور", "created_date": datetime.now().isoformat()}
-                ],
                 "content": []
+            },
+            CHANNELS_FILE: {
+                "channels": []
             },
             SETTINGS_FILE: {
                 "subscription": {
@@ -83,7 +82,9 @@ class BotDatabase:
             if "settings" in file_path:
                 return {}
             elif "content" in file_path:
-                return {"categories": [], "content": []}
+                return {"content": []}
+            elif "channels" in file_path:
+                return {"channels": []}
             elif "requests" in file_path:
                 return []
             else:
@@ -146,11 +147,102 @@ class BotDatabase:
         users = BotDatabase.read_json(USERS_FILE)
         return [user_id for user_id, data in users.items() if data.get('approved', False)]
 
+    @staticmethod
+    def add_channel(name, link):
+        channels_data = BotDatabase.read_json(CHANNELS_FILE)
+        new_id = max([ch.get('id', 0) for ch in channels_data.get("channels", [])] or [0]) + 1
+        
+        new_channel = {
+            "id": new_id,
+            "name": name,
+            "link": link,
+            "created_date": datetime.now().isoformat()
+        }
+        
+        channels_data["channels"].append(new_channel)
+        BotDatabase.write_json(CHANNELS_FILE, channels_data)
+        return new_id
+
+    @staticmethod
+    def get_channels():
+        channels_data = BotDatabase.read_json(CHANNELS_FILE)
+        return channels_data.get("channels", [])
+
+    @staticmethod
+    def delete_channel(channel_id):
+        channels_data = BotDatabase.read_json(CHANNELS_FILE)
+        channels = channels_data.get("channels", [])
+        
+        channel_to_delete = None
+        for channel in channels:
+            if channel['id'] == channel_id:
+                channel_to_delete = channel
+                break
+        
+        if channel_to_delete:
+            channels_data["channels"] = [ch for ch in channels if ch['id'] != channel_id]
+            BotDatabase.write_json(CHANNELS_FILE, channels_data)
+            return channel_to_delete
+        
+        return None
+
+    @staticmethod
+    def add_content(title, content_type, text_content="", file_id="", content_id=None):
+        content_data = BotDatabase.read_json(CONTENT_FILE)
+        
+        if content_id is None:
+            content_id = max([item.get('id', 0) for item in content_data.get('content', [])] or [0]) + 1
+        
+        new_content = {
+            "id": content_id,
+            "title": title,
+            "content_type": content_type,
+            "text_content": text_content,
+            "file_id": file_id,
+            "created_date": datetime.now().isoformat(),
+            "share_url": f"https://t.me/{(BOT_TOKEN.split(':')[0])}?start=content_{content_id}"
+        }
+        
+        content_data["content"].append(new_content)
+        BotDatabase.write_json(CONTENT_FILE, content_data)
+        return new_content
+
+    @staticmethod
+    def get_content_by_id(content_id):
+        content_data = BotDatabase.read_json(CONTENT_FILE)
+        for item in content_data.get("content", []):
+            if item['id'] == content_id:
+                return item
+        return None
+
+    @staticmethod
+    def get_all_content():
+        content_data = BotDatabase.read_json(CONTENT_FILE)
+        return content_data.get("content", [])
+
+    @staticmethod
+    def delete_content(content_id):
+        content_data = BotDatabase.read_json(CONTENT_FILE)
+        content_items = content_data.get("content", [])
+        
+        content_to_delete = None
+        for item in content_items:
+            if item['id'] == content_id:
+                content_to_delete = item
+                break
+        
+        if content_to_delete:
+            content_data["content"] = [item for item in content_items if item['id'] != content_id]
+            BotDatabase.write_json(CONTENT_FILE, content_data)
+            return content_to_delete
+        
+        return None
+
 class KeyboardManager:
     @staticmethod
     def get_user_keyboard():
         return ReplyKeyboardMarkup([
-            ["📂 تصفح الأقسام", "📰 آخر المشاركات"],
+            ["📺 قنوات نسونجي", "🔍 ID"],
             ["ℹ️ المساعدة"]
         ], resize_keyboard=True)
 
@@ -159,7 +251,7 @@ class KeyboardManager:
         return ReplyKeyboardMarkup([
             ["👑 لوحة التحكم", "📊 الإحصائيات"],
             ["👥 إدارة المستخدمين", "📢 الاشتراك الإجباري"],
-            ["📝 إدارة الأقسام", "🎭 إدارة المحتوى"],
+            ["📺 إدارة القنوات", "🎭 إدارة المحتوى"],
             ["⚙️ الإعدادات العامة", "📤 البث للمستخدمين"],
             ["💾 النسخ الاحتياطي"]
         ], resize_keyboard=True)
@@ -173,121 +265,25 @@ class KeyboardManager:
         return ReplyKeyboardMarkup([["🏠 الرئيسية"]], resize_keyboard=True)
 
     @staticmethod
-    def get_categories_keyboard():
-        content = BotDatabase.read_json(CONTENT_FILE)
-        categories = content.get("categories", [])
+    def get_channels_keyboard():
+        channels = BotDatabase.get_channels()
         
         keyboard = []
-        for category in categories:
-            keyboard.append([category['name']])
+        for channel in channels:
+            keyboard.append([f"📺 {channel['name']}"])
         
         keyboard.append(["🏠 الرئيسية"])
         return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
     @staticmethod
-    def get_category_content_keyboard(category_id):
-        """إرجاع أزرار عادية لمحتوى القسم بدلاً من أزرار داخلية"""
-        content_data = BotDatabase.read_json(CONTENT_FILE)
-        category_content = [item for item in content_data.get("content", []) if item.get("category_id") == category_id]
+    def get_channels_inline_keyboard():
+        channels = BotDatabase.get_channels()
         
         keyboard = []
-        # عرض أول 5 عناصر فقط لتجنب ازدحام الكيبورد
-        for item in category_content[:5]:
-            # تقصير العنوان إذا كان طويلاً
-            title = item['title']
-            if len(title) > 30:
-                title = title[:27] + "..."
-            keyboard.append([f"📖 {title}"])
+        for channel in channels:
+            keyboard.append([InlineKeyboardButton(f"📺 {channel['name']}", url=channel['link'])])
         
-        # إذا كان هناك أكثر من 5 عناصر، أضف زر "عرض المزيد"
-        if len(category_content) > 5:
-            keyboard.append(["📋 عرض المزيد"])
-        
-        keyboard.append(["🔙 رجوع للأقسام", "🏠 الرئيسية"])
-        return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-
-    @staticmethod
-    def get_category_content_inline_keyboard(category_id):
-        """إرجاع أزرار داخلية لجميع محتويات القسم (لخيار عرض المزيد)"""
-        content_data = BotDatabase.read_json(CONTENT_FILE)
-        category_content = [item for item in content_data.get("content", []) if item.get("category_id") == category_id]
-        
-        keyboard = []
-        for item in category_content:
-            title = item['title']
-            if len(title) > 30:
-                title = title[:27] + "..."
-            keyboard.append([InlineKeyboardButton(f"📖 {title}", callback_data=f"content_{item['id']}")])
-        
-        keyboard.append([InlineKeyboardButton("🔙 رجوع للأقسام", callback_data="back_to_categories")])
-        return InlineKeyboardMarkup(keyboard)
-
-    @staticmethod
-    def get_content_navigation_keyboard(content_id, category_id):
-        """إبقاء الأزرار الداخلية للتنقل بين المحتويات"""
-        content_data = BotDatabase.read_json(CONTENT_FILE)
-        category_content = [item for item in content_data.get("content", []) if item.get("category_id") == category_id]
-        
-        if not category_content:
-            return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data=f"category_{category_id}")]])
-        
-        current_index = next((i for i, item in enumerate(category_content) if item['id'] == content_id), 0)
-        
-        keyboard_buttons = []
-        
-        # زر السابق
-        if current_index > 0:
-            prev_content = category_content[current_index - 1]
-            keyboard_buttons.append(InlineKeyboardButton("⬅️ السابق", callback_data=f"content_{prev_content['id']}"))
-        
-        # زر الرجوع
-        keyboard_buttons.append(InlineKeyboardButton("🔙 رجوع", callback_data=f"category_{category_id}"))
-        
-        # زر التالي
-        if current_index < len(category_content) - 1:
-            next_content = category_content[current_index + 1]
-            keyboard_buttons.append(InlineKeyboardButton("التالي ➡️", callback_data=f"content_{next_content['id']}"))
-        
-        return InlineKeyboardMarkup([keyboard_buttons])
-
-    @staticmethod
-    def get_recent_posts_keyboard():
-        """إرجاع أزرار عادية للمشاركات الأخيرة"""
-        content_data = BotDatabase.read_json(CONTENT_FILE)
-        all_content = content_data.get("content", [])
-        
-        # تصفية المحتوى النصي فقط وترتيبه من الأحدث
-        text_content = [item for item in all_content if item.get('content_type') == 'text']
-        recent_posts = sorted(text_content, key=lambda x: x.get('created_date', ''), reverse=True)[:5]
-        
-        keyboard = []
-        for post in recent_posts:
-            # تقصير العنوان إذا كان طويلاً
-            title = post['title']
-            if len(title) > 30:
-                title = title[:27] + "..."
-            keyboard.append([f"📰 {title}"])
-        
-        keyboard.append(["🏠 الرئيسية"])
-        return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-
-    @staticmethod
-    def get_recent_posts_inline_keyboard():
-        """إرجاع أزرار داخلية لجميع المشاركات الأخيرة"""
-        content_data = BotDatabase.read_json(CONTENT_FILE)
-        all_content = content_data.get("content", [])
-        
-        text_content = [item for item in all_content if item.get('content_type') == 'text']
-        recent_posts = sorted(text_content, key=lambda x: x.get('created_date', ''), reverse=True)[:7]
-        
-        keyboard = []
-        for post in recent_posts:
-            title = post['title']
-            if len(title) > 30:
-                title = title[:27] + "..."
-            keyboard.append([InlineKeyboardButton(title, callback_data=f"content_{post['id']}")])
-        
-        keyboard.append([InlineKeyboardButton("🔙 رجوع للرئيسية", callback_data="back_to_main")])
+        keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data="back_to_main")])
         return InlineKeyboardMarkup(keyboard)
 
     @staticmethod
@@ -295,6 +291,57 @@ class KeyboardManager:
         return ReplyKeyboardMarkup([
             ["📋 طلبات الانتظار", "👀 المستخدمين النشطين"],
             ["🗑️ حذف مستخدم", "🏠 الرئيسية"]
+        ], resize_keyboard=True)
+
+    @staticmethod
+    def get_channels_management_keyboard():
+        return ReplyKeyboardMarkup([
+            ["➕ إضافة قناة", "🗑️ حذف قناة"],
+            ["📋 عرض القنوات", "🏠 الرئيسية"]
+        ], resize_keyboard=True)
+
+    @staticmethod
+    def get_content_management_keyboard():
+        return ReplyKeyboardMarkup([
+            ["➕ إضافة محتوى", "🗑️ حذف محتوى"],
+            ["📋 عرض المحتوى", "🏠 الرئيسية"]
+        ], resize_keyboard=True)
+
+    @staticmethod
+    def get_subscription_management_keyboard():
+        return ReplyKeyboardMarkup([
+            ["🔔 تفعيل/إلغاء", "✏️ تعديل الرسالة"],
+            ["📝 إضافة قناة", "🗑️ حذف قناة"],
+            ["📋 عرض القنوات", "🏠 الرئيسية"]
+        ], resize_keyboard=True)
+
+    @staticmethod
+    def get_settings_keyboard():
+        return ReplyKeyboardMarkup([
+            ["✏️ تعديل رسالة الترحيب", "✏️ تعديل رسالة الرفض"],
+            ["✏️ تعديل رسالة المساعدة", "🔔 تفعيل/إلغاء التحويل"],
+            ["🏠 الرئيسية"]
+        ], resize_keyboard=True)
+
+    @staticmethod
+    def get_broadcast_keyboard():
+        return ReplyKeyboardMarkup([
+            ["📢 بث لجميع المستخدمين", "👤 بث لمستخدم محدد"],
+            ["📋 عرض المستخدمين", "🏠 الرئيسية"]
+        ], resize_keyboard=True)
+
+    @staticmethod
+    def get_backup_keyboard():
+        return ReplyKeyboardMarkup([
+            ["💾 تنزيل نسخة", "🔄 رفع نسخة"],
+            ["📋 عرض النسخ", "🏠 الرئيسية"]
+        ], resize_keyboard=True)
+
+    @staticmethod
+    def get_text_input_keyboard():
+        return ReplyKeyboardMarkup([
+            ["✅ إنهاء وحفظ", "❌ إلغاء الإضافة"],
+            ["🏠 الرئيسية"]
         ], resize_keyboard=True)
 
 def is_admin(user_id):
@@ -328,6 +375,16 @@ async def check_subscription(user_id, context):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
+    # معالجة رابط المشاركة
+    if context.args:
+        start_arg = context.args[0]
+        if start_arg.startswith('content_'):
+            content_id = int(start_arg.replace('content_', ''))
+            content = BotDatabase.get_content_by_id(content_id)
+            if content:
+                await show_content_item_from_message(update, context, content_id)
+                return
+    
     if not ADMIN_IDS:
         ADMIN_IDS.append(user_id)
         await update.message.reply_text(
@@ -335,7 +392,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "يمكنك الآن استخدام لوحة التحكم للإدارة الكاملة للبوت.",
             parse_mode='Markdown',
             reply_markup=KeyboardManager.get_admin_keyboard()
-            
         )
         return
     
@@ -357,7 +413,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         "بعد الاشتراك، اضغط على /start مرة أخرى",
                         parse_mode='Markdown',
                         reply_markup=ReplyKeyboardMarkup([["✅ تحقق من الاشتراك"]], resize_keyboard=True)
-                        
                     )
                     return
             
@@ -370,20 +425,19 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     reply_markup=KeyboardManager.get_admin_keyboard()
                 )
             else:
-               await update.message.reply_text( f"*مرحباً بعودتك يا {update.effective_user.first_name}! 👋*\n"
-    "_يسرّنا رؤيتك مجدداً._\n\n"
-    "⬇️ *اختر أحد الأقسام أدناه للمتابعة:*",
+                await update.message.reply_text(
+                    f"*مرحباً بعودتك يا {update.effective_user.first_name}! 👋*\n"
+                    "_يسرّنا رؤيتك مجدداً._\n\n"
+                    "⬇️ *اختر أحد الأقسام أدناه للمتابعة:*",
                     parse_mode='Markdown',
-
-               reply_markup=KeyboardManager.get_user_keyboard()
+                    reply_markup=KeyboardManager.get_user_keyboard()
                 )
         else:
             # المستخدم غير مفعل
             await update.message.reply_text(
                 "*⏳ طلبك قيد المراجعة من قبل المدير...\n*"
                 "سيتم إعلامك فور الموافقة على طلبك.",
-               parse_mode='Markdown',
-
+                parse_mode='Markdown',
                 reply_markup=KeyboardManager.get_waiting_keyboard()
             )
     else:
@@ -441,10 +495,10 @@ async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             )
             return
     
-    if text == "📂 تصفح الأقسام":
-        await show_categories_to_user(update, context)
-    elif text == "📰 آخر المشاركات":
-        await show_recent_posts(update, context)
+    if text == "📺 قنوات نسونجي":
+        await show_channels_to_user(update, context)
+    elif text == "🔍 ID":
+        await ask_for_content_id(update, context)
     elif text == "ℹ️ المساعدة":
         await update.message.reply_text(BotDatabase.get_setting("responses.help"))
     elif text == "✅ تحقق من الاشتراك":
@@ -468,96 +522,58 @@ async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             "سيتم إعلامك فور الموافقة على طلبك.",
             reply_markup=KeyboardManager.get_waiting_keyboard()
         )
-    elif text == "📋 عرض المزيد":
-        await show_more_content(update, context)
     else:
-        await handle_category_selection(update, context, text)
+        await handle_channel_selection(update, context, text)
 
-async def show_categories_to_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    content = BotDatabase.read_json(CONTENT_FILE)
-    categories = content.get("categories", [])
+async def show_channels_to_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    channels = BotDatabase.get_channels()
     
-    if not categories:
-        await update.message.reply_text("📭 لا توجد أقسام متاحة حالياً.")
+    if not channels:
+        await update.message.reply_text("📭 لا توجد قنوات متاحة حالياً.")
         return
     
     await update.message.reply_text(
-        "📂 الأقسام المتاحة:\nاختر القسم الذي تريد تصفحه:",
-        reply_markup=KeyboardManager.get_categories_keyboard()
+        "📺 قنوات نسونجي:\nاختر القناة التي تريد زيارتها:",
+        reply_markup=KeyboardManager.get_channels_keyboard()
     )
 
-async def show_category_content_list(update: Update, context: ContextTypes.DEFAULT_TYPE, category_id: int):
-    content_data = BotDatabase.read_json(CONTENT_FILE)
-    categories = content_data.get("categories", [])
-    category_content = [item for item in content_data.get("content", []) if item.get("category_id") == category_id]
-    
-    category_name = next((cat['name'] for cat in categories if cat['id'] == category_id), "غير معروف")
-    
-    if not category_content:
-        await update.message.reply_text(f"📭 لا يوجد محتوى في قسم {category_name} حالياً.")
-        return
-    
-    text = f"📂 {category_name}\n\n"
-    text += f"عدد العناصر: {len(category_content)}\n\n"
-    text += "اختر المحتوى الذي تريد مشاهدته:"
-    
-    # استخدام الأزرار العادية بدلاً من الداخلية
-    await update.message.reply_text(text, reply_markup=KeyboardManager.get_category_content_keyboard(category_id))
-
-async def show_recent_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    content_data = BotDatabase.read_json(CONTENT_FILE)
-    all_content = content_data.get("content", [])
-    
-    # تصفية المحتوى النصي فقط وترتيبه من الأحدث
-    text_content = [item for item in all_content if item.get('content_type') == 'text']
-    recent_posts = sorted(text_content, key=lambda x: x.get('created_date', ''), reverse=True)[:5]
-    
-    if not recent_posts:
-        await update.message.reply_text("📭 لا توجد مشاركات نصية حديثة.")
-        return
-    
-    text = "📰 آخر المشاركات النصية:\n\n"
-    text += "اختر المشاركة التي تريد قراءتها:"
-    
-    # استخدام الأزرار العادية بدلاً من الداخلية
-    await update.message.reply_text(text, reply_markup=KeyboardManager.get_recent_posts_keyboard())
-
-async def show_more_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """عرض المزيد من المحتوى باستخدام الأزرار الداخلية"""
-    # هنا يمكنك حفظ معرف القسم في context.user_data لاستخدامه لاحقاً
+async def ask_for_content_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "📋 جميع المحتويات المتاحة:\nاختر من القائمة أدناه:",
-        reply_markup=KeyboardManager.get_category_content_inline_keyboard(1)  # تحتاج لتعديل هذا ليعتمد على القسم الحالي
+        "🔍 أدخل رقم المحتوى (ID):",
+        reply_markup=ReplyKeyboardMarkup([["🏠 الرئيسية"]], resize_keyboard=True)
     )
+    context.user_data['waiting_for_id'] = True
 
-async def handle_category_selection(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
-    content = BotDatabase.read_json(CONTENT_FILE)
-    categories = content.get("categories", [])
+async def handle_channel_selection(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+    channels = BotDatabase.get_channels()
     
-    for category in categories:
-        if text == category['name']:
-            await show_category_content_list(update, context, category['id'])
+    for channel in channels:
+        if text == f"📺 {channel['name']}":
+            await update.message.reply_text(
+                f"📺 {channel['name']}\n\n"
+                f"رابط القناة: {channel['link']}\n\n"
+                "انقر على الزر أدناه لزيارة القناة:",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📺 زيارة القناة", url=channel['link'])],
+                    [InlineKeyboardButton("🔙 رجوع", callback_data="back_to_channels")]
+                ])
+            )
             return
     
-    # معالجة أزرار المحتوى (التي تبدأ بـ 📖)
-    if text.startswith("📖 "):
-        content_title = text[2:]  # إزالة الإيموجي
-        content_data = BotDatabase.read_json(CONTENT_FILE)
-        content_item = next((item for item in content_data.get("content", []) if item['title'].startswith(content_title)), None)
+    # معالجة إدخال ID
+    if context.user_data.get('waiting_for_id'):
+        try:
+            content_id = int(text)
+            content = BotDatabase.get_content_by_id(content_id)
+            if content:
+                await show_content_item_from_message(update, context, content_id)
+            else:
+                await update.message.reply_text("❌ لم يتم العثور على محتوى بهذا الرقم.")
+        except ValueError:
+            await update.message.reply_text("❌ الرجاء إدخال رقم صحيح.")
         
-        if content_item:
-            await show_content_item_from_message(update, context, content_item['id'])
-            return
-    
-    # معالجة أزرار المشاركات الأخيرة (التي تبدأ بـ 📰)
-    if text.startswith("📰 "):
-        content_title = text[2:]  # إزالة الإيموجي
-        content_data = BotDatabase.read_json(CONTENT_FILE)
-        content_item = next((item for item in content_data.get("content", []) if item['title'].startswith(content_title)), None)
-        
-        if content_item:
-            await show_content_item_from_message(update, context, content_item['id'])
-            return
+        context.user_data['waiting_for_id'] = False
+        return
     
     if is_admin(update.effective_user.id):
         await update.message.reply_text("❌ لم أفهم طلبك. اختر من القائمة أدناه:", reply_markup=KeyboardManager.get_admin_keyboard())
@@ -565,9 +581,8 @@ async def handle_category_selection(update: Update, context: ContextTypes.DEFAUL
         await update.message.reply_text("❌ لم أفهم طلبك. اختر من القائمة أدناه:", reply_markup=KeyboardManager.get_user_keyboard())
 
 async def show_content_item_from_message(update: Update, context: ContextTypes.DEFAULT_TYPE, content_id: int):
-    """عرض عنصر محتوى من رسالة عادية (بدون استخدام callback)"""
-    content_data = BotDatabase.read_json(CONTENT_FILE)
-    content_item = next((item for item in content_data.get("content", []) if item['id'] == content_id), None)
+    """عرض عنصر محتوى من رسالة عادية"""
+    content_item = BotDatabase.get_content_by_id(content_id)
     
     if not content_item:
         await update.message.reply_text("❌ المحتوى غير موجود.")
@@ -576,7 +591,7 @@ async def show_content_item_from_message(update: Update, context: ContextTypes.D
     try:
         if content_item['content_type'] == 'text':
             # عرض النص البسيط
-            message_text = f"**{content_item['title']}**\n\n{content_item['text_content']}"
+            message_text = f"**{content_item['title']}**\n\n{content_item['text_content']}\n\n🔗 رابط المشاركة: {content_item.get('share_url', '')}"
             
             # إذا كان النص طويلاً جداً، نقسمه
             if len(message_text) > 4096:
@@ -589,95 +604,26 @@ async def show_content_item_from_message(update: Update, context: ContextTypes.D
         elif content_item['content_type'] == 'photo':
             await update.message.reply_photo(
                 photo=content_item['file_id'],
-                caption=f"🖼️ {content_item['title']}"
+                caption=f"🖼️ {content_item['title']}\n\n🔗 رابط المشاركة: {content_item.get('share_url', '')}"
             )
             
         elif content_item['content_type'] == 'video':
             await update.message.reply_video(
                 video=content_item['file_id'],
-                caption=f"🎬 {content_item['title']}"
+                caption=f"🎬 {content_item['title']}\n\n🔗 رابط المشاركة: {content_item.get('share_url', '')}"
             )
             
         elif content_item['content_type'] == 'document':
             await update.message.reply_document(
                 document=content_item['file_id'],
-                caption=f"📄 {content_item['title']}"
+                caption=f"📄 {content_item['title']}\n\n🔗 رابط المشاركة: {content_item.get('share_url', '')}"
             )
             
     except Exception as e:
         logger.error(f"Error showing content {content_id}: {e}")
         await update.message.reply_text(
-            f"📖 {content_item['title']}\n\n{content_item.get('text_content', 'المحتوى غير متوفر')}"
+            f"📖 {content_item['title']}\n\n{content_item.get('text_content', 'المحتوى غير متوفر')}\n\n🔗 رابط المشاركة: {content_item.get('share_url', '')}"
         )
-async def show_content_item(update: Update, context: ContextTypes.DEFAULT_TYPE, content_id: int):
-    query = update.callback_query
-    await query.answer()
-    
-    content_data = BotDatabase.read_json(CONTENT_FILE)
-    content_item = next((item for item in content_data.get("content", []) if item['id'] == content_id), None)
-    
-    if not content_item:
-        await query.edit_message_text("❌ المحتوى غير موجود.")
-        return
-    
-    category_id = content_item.get('category_id')
-    keyboard = KeyboardManager.get_content_navigation_keyboard(content_id, category_id)
-    
-    try:
-        if content_item['content_type'] == 'text':
-            # عرض النص البسيط
-            message_text = f"📖 {content_item['title']}\n\n{content_item['text_content']}"
-            
-            # إذا كان النص طويلاً جداً، نقسمه
-            if len(message_text) > 4096:
-                parts = [message_text[i:i+4096] for i in range(0, len(message_text), 4096)]
-                for i, part in enumerate(parts):
-                    if i == 0:
-                        await query.edit_message_text(part, reply_markup=keyboard if i == len(parts)-1 else None)
-                    else:
-                        await query.message.reply_text(part, reply_markup=keyboard if i == len(parts)-1 else None)
-            else:
-                await query.edit_message_text(message_text, reply_markup=keyboard)
-            
-        elif content_item['content_type'] == 'photo':
-            # حذف الرسالة القديمة وإرسال صورة جديدة
-            await query.delete_message()
-            await query.message.reply_photo(
-                photo=content_item['file_id'],
-                caption=f"🖼️ {content_item['title']}",
-                reply_markup=keyboard
-            )
-            
-        elif content_item['content_type'] == 'video':
-            await query.delete_message()
-            await query.message.reply_video(
-                video=content_item['file_id'],
-                caption=f"🎬 {content_item['title']}",
-                reply_markup=keyboard
-            )
-            
-        elif content_item['content_type'] == 'document':
-            await query.delete_message()
-            await query.message.reply_document(
-                document=content_item['file_id'],
-                caption=f"📄 {content_item['title']}",
-                reply_markup=keyboard
-            )
-            
-    except Exception as e:
-        logger.error(f"Error showing content {content_id}: {e}")
-        # محاولة بديلة في حالة الخطأ
-        try:
-            await query.edit_message_text(
-                f"📖 {content_item['title']}\n\n{content_item.get('text_content', 'المحتوى غير متوفر')}",
-                reply_markup=keyboard
-            )
-        except Exception as e2:
-            logger.error(f"Alternative method also failed: {e2}")
-            await query.edit_message_text(
-                "❌ تعذر عرض المحتوى. يرجى المحاولة مرة أخرى.",
-                reply_markup=keyboard
-            )
 
 async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
     user_id = update.effective_user.id
@@ -688,8 +634,8 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
         await show_user_management(update, context)
     elif text == "📊 الإحصائيات":
         await show_statistics(update, context)
-    elif text == "📝 إدارة الأقسام":
-        await show_categories_management(update, context)
+    elif text == "📺 إدارة القنوات":
+        await show_channels_management(update, context)
     elif text == "🎭 إدارة المحتوى":
         await show_content_management(update, context)
     elif text == "📢 الاشتراك الإجباري":
@@ -700,10 +646,10 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
         await show_broadcast_management(update, context)
     elif text == "💾 النسخ الاحتياطي":
         await show_backup_management(update, context)
-    elif text == "📂 تصفح الأقسام":
-        await show_categories_to_user(update, context)
-    elif text == "📰 آخر المشاركات":
-        await show_recent_posts(update, context)
+    elif text == "📺 قنوات نسونجي":
+        await show_channels_to_user(update, context)
+    elif text == "🔍 ID":
+        await ask_for_content_id(update, context)
     elif text == "🏠 الرئيسية":
         await update.message.reply_text("🏠 العودة للرئيسية", reply_markup=KeyboardManager.get_admin_keyboard())
     elif text == "📋 طلبات الانتظار":
@@ -712,12 +658,12 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
         await show_active_users(update, context)
     elif text == "🗑️ حذف مستخدم":
         await start_delete_user(update, context)
-    elif text == "➕ إضافة قسم":
-        await start_add_category(update, context)
-    elif text == "🗑️ حذف قسم":
-        await start_delete_category(update, context)
-    elif text == "📋 عرض الأقسام":
-        await show_all_categories(update, context)
+    elif text == "➕ إضافة قناة":
+        await start_add_channel(update, context)
+    elif text == "🗑️ حذف قناة":
+        await start_delete_channel(update, context)
+    elif text == "📋 عرض القنوات":
+        await show_all_channels(update, context)
     elif text == "➕ إضافة محتوى":
         await start_add_content(update, context)
     elif text == "🗑️ حذف محتوى":
@@ -752,52 +698,26 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
         await start_restore_backup(update, context)
     elif text == "📋 عرض النسخ":
         await show_backups(update, context)
-    elif text == "📋 عرض المزيد":
-        await show_more_content_admin(update, context)
     else:
-        await handle_category_selection(update, context, text)
-
-async def show_more_content_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """عرض المزيد من المحتوى للمدير"""
-    await update.message.reply_text(
-        "📋 جميع المحتويات المتاحة:\nاختر من القائمة أدناه:",
-        reply_markup=KeyboardManager.get_category_content_inline_keyboard(1)
-    )
-
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    text = update.message.text
-    
-    # التحقق من أن المستخدم مفعل أولاً
-    if not is_user_approved(user_id) and not is_admin(user_id):
-        await update.message.reply_text(
-            "⏳ طلبك قيد المراجعة من قبل المدير...\n"
-            "سيتم إعلامك فور الموافقة على طلبك.",
-            reply_markup=KeyboardManager.get_waiting_keyboard()
-        )
-        return
-    
-    if is_admin(user_id):
-        await handle_admin_message(update, context, text)
-    else:
-        await handle_user_message(update, context, text)
+        await handle_channel_selection(update, context, text)
 
 async def show_admin_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     users = BotDatabase.read_json(USERS_FILE)
-    content = BotDatabase.read_json(CONTENT_FILE)
+    content = BotDatabase.get_all_content()
+    channels = BotDatabase.get_channels()
     
     active_users = len([u for u in users.values() if u.get('approved', False)])
     total_users = len(users)
     pending_requests = len(BotDatabase.get_pending_requests())
-    categories_count = len(content.get('categories', []))
-    content_count = len(content.get('content', []))
+    channels_count = len(channels)
+    content_count = len(content)
     
     stats_text = (
         "👑 لوحة تحكم المدير\n\n"
         "📊 الإحصائيات السريعة:\n"
         f"• 👥 المستخدمين النشطين: {active_users}\n"
         f"• ⏳ طلبات الانتظار: {pending_requests}\n"
-        f"• 📂 الأقسام: {categories_count}\n"
+        f"• 📺 القنوات: {channels_count}\n"
         f"• 🎭 محتوى: {content_count}\n\n"
         "اختر من القائمة أدناه للإدارة:"
     )
@@ -888,13 +808,14 @@ async def delete_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def show_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
     users = BotDatabase.read_json(USERS_FILE)
-    content = BotDatabase.read_json(CONTENT_FILE)
+    content = BotDatabase.get_all_content()
+    channels = BotDatabase.get_channels()
     
     active_users = len(BotDatabase.get_approved_users())
     total_users = len(users)
     pending_requests = len(BotDatabase.get_pending_requests())
-    categories_count = len(content.get('categories', []))
-    content_count = len(content.get('content', []))
+    channels_count = len(channels)
+    content_count = len(content)
     
     text = (
         "📊 الإحصائيات التفصيلية\n\n"
@@ -904,7 +825,7 @@ async def show_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"• طلبات الانتظار: {pending_requests}\n"
         f"• النسبة: {round((active_users/total_users)*100 if total_users > 0 else 0, 1)}%\n\n"
         f"🎭 المحتوى:\n"
-        f"• الأقسام: {categories_count}\n"
+        f"• القنوات: {channels_count}\n"
         f"• العناصر: {content_count}\n\n"
         f"⚙️ الإعدادات:\n"
         f"• الاشتراك الإجباري: {'✅ مفعل' if BotDatabase.get_setting('subscription.enabled') else '❌ معطل'}\n"
@@ -913,384 +834,117 @@ async def show_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(text)
 
-class KeyboardManager:
-    @staticmethod
-    def get_user_keyboard():
-        return ReplyKeyboardMarkup([
-            ["📂 تصفح الأقسام", "📰 آخر المشاركات"],
-            ["ℹ️ المساعدة"]
-        ], resize_keyboard=True)
-
-    @staticmethod
-    def get_admin_keyboard():
-        return ReplyKeyboardMarkup([
-            ["👑 لوحة التحكم", "📊 الإحصائيات"],
-            ["👥 إدارة المستخدمين", "📢 الاشتراك الإجباري"],
-            ["📝 إدارة الأقسام", "🎭 إدارة المحتوى"],
-            ["⚙️ الإعدادات العامة", "📤 البث للمستخدمين"],
-            ["💾 النسخ الاحتياطي"]
-        ], resize_keyboard=True)
-
-    @staticmethod
-    def get_waiting_keyboard():
-        return ReplyKeyboardMarkup([["⏳ انتظر الموافقة"]], resize_keyboard=True)
-
-    @staticmethod
-    def get_back_keyboard():
-        return ReplyKeyboardMarkup([["🏠 الرئيسية"]], resize_keyboard=True)
-
-    @staticmethod
-    def get_categories_keyboard():
-        content = BotDatabase.read_json(CONTENT_FILE)
-        categories = content.get("categories", [])
-        
-        keyboard = []
-        for category in categories:
-            keyboard.append([category['name']])
-        
-        keyboard.append(["🏠 الرئيسية"])
-        return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-
-    @staticmethod
-    def get_category_content_keyboard(category_id):
-        """إرجاع أزرار عادية لمحتوى القسم بدلاً من أزرار داخلية"""
-        content_data = BotDatabase.read_json(CONTENT_FILE)
-        category_content = [item for item in content_data.get("content", []) if item.get("category_id") == category_id]
-        
-        keyboard = []
-        # عرض أول 5 عناصر فقط لتجنب ازدحام الكيبورد
-        for item in category_content[:5]:
-            # تقصير العنوان إذا كان طويلاً
-            title = item['title']
-            if len(title) > 30:
-                title = title[:27] + "..."
-            keyboard.append([f"📖 {title}"])
-        
-        # إذا كان هناك أكثر من 5 عناصر، أضف زر "عرض المزيد"
-        if len(category_content) > 5:
-            keyboard.append(["📋 عرض المزيد"])
-        
-        keyboard.append(["🔙 رجوع للأقسام", "🏠 الرئيسية"])
-        return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-
-    @staticmethod
-    def get_category_content_inline_keyboard(category_id):
-        """إرجاع أزرار داخلية لجميع محتويات القسم (لخيار عرض المزيد)"""
-        content_data = BotDatabase.read_json(CONTENT_FILE)
-        category_content = [item for item in content_data.get("content", []) if item.get("category_id") == category_id]
-        
-        keyboard = []
-        for item in category_content:
-            title = item['title']
-            if len(title) > 30:
-                title = title[:27] + "..."
-            keyboard.append([InlineKeyboardButton(f"📖 {title}", callback_data=f"content_{item['id']}")])
-        
-        keyboard.append([InlineKeyboardButton("🔙 رجوع للأقسام", callback_data="back_to_categories")])
-        return InlineKeyboardMarkup(keyboard)
-
-    @staticmethod
-    def get_content_navigation_keyboard(content_id, category_id):
-        """إبقاء الأزرار الداخلية للتنقل بين المحتويات"""
-        content_data = BotDatabase.read_json(CONTENT_FILE)
-        category_content = [item for item in content_data.get("content", []) if item.get("category_id") == category_id]
-        
-        if not category_content:
-            return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data=f"category_{category_id}")]])
-        
-        current_index = next((i for i, item in enumerate(category_content) if item['id'] == content_id), 0)
-        
-        keyboard_buttons = []
-        
-        # زر السابق
-        if current_index > 0:
-            prev_content = category_content[current_index - 1]
-            keyboard_buttons.append(InlineKeyboardButton("⬅️ السابق", callback_data=f"content_{prev_content['id']}"))
-        
-        # زر الرجوع
-        keyboard_buttons.append(InlineKeyboardButton("🔙 رجوع", callback_data=f"category_{category_id}"))
-        
-        # زر التالي
-        if current_index < len(category_content) - 1:
-            next_content = category_content[current_index + 1]
-            keyboard_buttons.append(InlineKeyboardButton("التالي ➡️", callback_data=f"content_{next_content['id']}"))
-        
-        return InlineKeyboardMarkup([keyboard_buttons])
-
-    @staticmethod
-    def get_recent_posts_keyboard():
-        """إرجاع أزرار عادية للمشاركات الأخيرة"""
-        content_data = BotDatabase.read_json(CONTENT_FILE)
-        all_content = content_data.get("content", [])
-        
-        # تصفية المحتوى النصي فقط وترتيبه من الأحدث
-        text_content = [item for item in all_content if item.get('content_type') == 'text']
-        recent_posts = sorted(text_content, key=lambda x: x.get('created_date', ''), reverse=True)[:5]
-        
-        keyboard = []
-        for post in recent_posts:
-            # تقصير العنوان إذا كان طويلاً
-            title = post['title']
-            if len(title) > 30:
-                title = title[:27] + "..."
-            keyboard.append([f"📰 {title}"])
-        
-        keyboard.append(["🏠 الرئيسية"])
-        return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-
-    @staticmethod
-    def get_recent_posts_inline_keyboard():
-        """إرجاع أزرار داخلية لجميع المشاركات الأخيرة"""
-        content_data = BotDatabase.read_json(CONTENT_FILE)
-        all_content = content_data.get("content", [])
-        
-        text_content = [item for item in all_content if item.get('content_type') == 'text']
-        recent_posts = sorted(text_content, key=lambda x: x.get('created_date', ''), reverse=True)[:7]
-        
-        keyboard = []
-        for post in recent_posts:
-            title = post['title']
-            if len(title) > 30:
-                title = title[:27] + "..."
-            keyboard.append([InlineKeyboardButton(title, callback_data=f"content_{post['id']}")])
-        
-        keyboard.append([InlineKeyboardButton("🔙 رجوع للرئيسية", callback_data="back_to_main")])
-        return InlineKeyboardMarkup(keyboard)
-
-    @staticmethod
-    def get_user_management_keyboard():
-        return ReplyKeyboardMarkup([
-            ["📋 طلبات الانتظار", "👀 المستخدمين النشطين"],
-            ["🗑️ حذف مستخدم", "🏠 الرئيسية"]
-        ], resize_keyboard=True)
-
-    @staticmethod
-    def get_categories_management_keyboard():
-        return ReplyKeyboardMarkup([
-            ["➕ إضافة قسم", "🗑️ حذف قسم"],
-            ["📋 عرض الأقسام", "🏠 الرئيسية"]
-        ], resize_keyboard=True)
-
-    @staticmethod
-    def get_content_management_keyboard():
-        return ReplyKeyboardMarkup([
-            ["➕ إضافة محتوى", "🗑️ حذف محتوى"],
-            ["📋 عرض المحتوى", "🏠 الرئيسية"]
-        ], resize_keyboard=True)
-
-    @staticmethod
-    def get_subscription_management_keyboard():
-        return ReplyKeyboardMarkup([
-            ["🔔 تفعيل/إلغاء", "✏️ تعديل الرسالة"],
-            ["📝 إضافة قناة", "🗑️ حذف قناة"],
-            ["📋 عرض القنوات", "🏠 الرئيسية"]
-        ], resize_keyboard=True)
-
-    @staticmethod
-    def get_settings_keyboard():
-        return ReplyKeyboardMarkup([
-            ["✏️ تعديل رسالة الترحيب", "✏️ تعديل رسالة الرفض"],
-            ["✏️ تعديل رسالة المساعدة", "🔔 تفعيل/إلغاء التحويل"],
-            ["🏠 الرئيسية"]
-        ], resize_keyboard=True)
-
-    @staticmethod
-    def get_broadcast_keyboard():
-        return ReplyKeyboardMarkup([
-            ["📢 بث لجميع المستخدمين", "👤 بث لمستخدم محدد"],
-            ["📋 عرض المستخدمين", "🏠 الرئيسية"]
-        ], resize_keyboard=True)
-
-    @staticmethod
-    def get_backup_keyboard():
-        return ReplyKeyboardMarkup([
-            ["💾 تنزيل نسخة", "🔄 رفع نسخة"],
-            ["📋 عرض النسخ", "🏠 الرئيسية"]
-        ], resize_keyboard=True)
-
-    @staticmethod
-    def get_text_input_keyboard():
-        return ReplyKeyboardMarkup([
-            ["✅ إنهاء وحفظ", "❌ إلغاء الإضافة"],
-            ["🏠 الرئيسية"]
-        ], resize_keyboard=True)
+async def show_channels_management(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    channels = BotDatabase.get_channels()
     
-    @staticmethod
-    def get_categories_management_keyboard():
-        return ReplyKeyboardMarkup([
-            ["➕ إضافة قسم", "🗑️ حذف قسم"],
-            ["📋 عرض الأقسام", "🏠 الرئيسية"]
-        ], resize_keyboard=True)
-
-    @staticmethod
-    def get_content_management_keyboard():
-        return ReplyKeyboardMarkup([
-            ["➕ إضافة محتوى", "🗑️ حذف محتوى"],
-            ["📋 عرض المحتوى", "🏠 الرئيسية"]
-        ], resize_keyboard=True)
-
-    @staticmethod
-    def get_subscription_management_keyboard():
-        return ReplyKeyboardMarkup([
-            ["🔔 تفعيل/إلغاء", "✏️ تعديل الرسالة"],
-            ["📝 إضافة قناة", "🗑️ حذف قناة"],
-            ["📋 عرض القنوات", "🏠 الرئيسية"]
-        ], resize_keyboard=True)
-
-    @staticmethod
-    def get_settings_keyboard():
-        return ReplyKeyboardMarkup([
-            ["✏️ تعديل رسالة الترحيب", "✏️ تعديل رسالة الرفض"],
-            ["✏️ تعديل رسالة المساعدة", "🔔 تفعيل/إلغاء التحويل"],
-            ["🏠 الرئيسية"]
-        ], resize_keyboard=True)
-
-    @staticmethod
-    def get_broadcast_keyboard():
-        return ReplyKeyboardMarkup([
-            ["📢 بث لجميع المستخدمين", "👤 بث لمستخدم محدد"],
-            ["📋 عرض المستخدمين", "🏠 الرئيسية"]
-        ], resize_keyboard=True)
-
-    @staticmethod
-    def get_backup_keyboard():
-        return ReplyKeyboardMarkup([
-            ["💾 تنزيل نسخة", "🔄 رفع نسخة"],
-            ["📋 عرض النسخ", "🏠 الرئيسية"]
-        ], resize_keyboard=True)
-
-    @staticmethod
-    def get_text_input_keyboard():
-        return ReplyKeyboardMarkup([
-            ["✅ إنهاء وحفظ", "❌ إلغاء الإضافة"],
-            ["🏠 الرئيسية"]
-        ], resize_keyboard=True)
-
-async def show_categories_management(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    content = BotDatabase.read_json(CONTENT_FILE)
-    categories = content.get("categories", [])
-    
-    text = "📝 إدارة الأقسام\n\n"
-    if categories:
-        text += "الأقسام الحالية:\n"
-        for cat in categories:
-            items_count = len([item for item in content.get('content', []) if item.get('category_id') == cat['id']])
-            text += f"• {cat['name']} (المحتوى: {items_count})\n"
+    text = "📺 إدارة القنوات\n\n"
+    if channels:
+        text += "القنوات الحالية:\n"
+        for channel in channels:
+            text += f"• {channel['name']} - {channel['link']}\n"
     else:
-        text += "لا توجد أقسام حالياً.\n"
+        text += "لا توجد قنوات حالياً.\n"
     
     text += "\nاختر الإجراء المطلوب:"
     
-    await update.message.reply_text(text, reply_markup=KeyboardManager.get_categories_management_keyboard())
+    await update.message.reply_text(text, reply_markup=KeyboardManager.get_channels_management_keyboard())
 
-async def start_add_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start_add_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "➕ إضافة قسم جديد\n\n"
-        "أرسل اسم القسم:",
+        "➕ إضافة قناة جديدة\n\n"
+        "أرسل اسم القناة:",
         reply_markup=KeyboardManager.get_back_keyboard()
     )
-    return ADD_CATEGORY_NAME
+    return ADD_CHANNEL_NAME
 
-async def add_category_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    category_name = update.message.text.strip()
+async def add_channel_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    channel_name = update.message.text.strip()
     
-    if not category_name:
-        await update.message.reply_text("❌ الرجاء إدخال اسم صحيح للقسم.")
-        return ADD_CATEGORY_NAME
+    if not channel_name:
+        await update.message.reply_text("❌ الرجاء إدخال اسم صحيح للقناة.")
+        return ADD_CHANNEL_NAME
         
-    content = BotDatabase.read_json(CONTENT_FILE)
-    categories = content.get("categories", [])
-    
-    new_id = max([cat.get('id', 0) for cat in categories] or [0]) + 1
-    
-    new_category = {
-        "id": new_id,
-        "name": category_name,
-        "created_date": datetime.now().isoformat()
-    }
-    
-    categories.append(new_category)
-    content["categories"] = categories
-    BotDatabase.write_json(CONTENT_FILE, content)
+    context.user_data['channel_name'] = channel_name
     
     await update.message.reply_text(
-        f"✅ تم إضافة القسم بنجاح!\n\n"
-        f"اسم القسم: {category_name}\n"
-        f"رقم القسم: {new_id}",
+        "أرسل رابط القناة:",
+        reply_markup=KeyboardManager.get_back_keyboard()
+    )
+    return ADD_CHANNEL_LINK
+
+async def add_channel_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    channel_link = update.message.text.strip()
+    channel_name = context.user_data['channel_name']
+    
+    if not channel_link.startswith('https://') and not channel_link.startswith('@'):
+        await update.message.reply_text("❌ الرجاء إدخال رابط صحيح للقناة.")
+        return ADD_CHANNEL_LINK
+    
+    channel_id = BotDatabase.add_channel(channel_name, channel_link)
+    
+    await update.message.reply_text(
+        f"✅ تم إضافة القناة بنجاح!\n\n"
+        f"اسم القناة: {channel_name}\n"
+        f"الرابط: {channel_link}\n"
+        f"رقم القناة: {channel_id}",
         reply_markup=KeyboardManager.get_admin_keyboard()
     )
     
     return ConversationHandler.END
 
-async def start_delete_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    content = BotDatabase.read_json(CONTENT_FILE)
-    categories = content.get("categories", [])
+async def start_delete_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    channels = BotDatabase.get_channels()
     
-    if not categories:
-        await update.message.reply_text("❌ لا توجد أقسام لحذفها.")
+    if not channels:
+        await update.message.reply_text("❌ لا توجد قنوات لحذفها.")
         return ConversationHandler.END
     
-    text = "🗑️ حذف قسم\n\nالأقسام الحالية:\n"
-    for cat in categories:
-        items_count = len([item for item in content.get('content', []) if item.get('category_id') == cat['id']])
-        text += f"• {cat['id']}: {cat['name']} (المحتوى: {items_count})\n"
+    text = "🗑️ حذف قناة\n\nالقنوات الحالية:\n"
+    for channel in channels:
+        text += f"• {channel['id']}: {channel['name']} - {channel['link']}\n"
     
-    text += "\nأرسل رقم القسم الذي تريد حذفه:"
+    text += "\nأرسل رقم القناة التي تريد حذفها:"
     
     await update.message.reply_text(text, reply_markup=KeyboardManager.get_back_keyboard())
-    return DELETE_CATEGORY
+    return DELETE_CHANNEL
 
-async def delete_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def delete_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        category_id = int(update.message.text)
-        content = BotDatabase.read_json(CONTENT_FILE)
-        categories = content.get("categories", [])
+        channel_id = int(update.message.text)
+        deleted_channel = BotDatabase.delete_channel(channel_id)
         
-        category_to_delete = None
-        for cat in categories:
-            if cat['id'] == category_id:
-                category_to_delete = cat
-                break
-        
-        if category_to_delete:
-            content["categories"] = [cat for cat in categories if cat['id'] != category_id]
-            content["content"] = [item for item in content.get('content', []) if item.get('category_id') != category_id]
-            
-            BotDatabase.write_json(CONTENT_FILE, content)
-            
+        if deleted_channel:
             await update.message.reply_text(
-                f"✅ تم حذف القسم: {category_to_delete['name']}",
+                f"✅ تم حذف القناة: {deleted_channel['name']}",
                 reply_markup=KeyboardManager.get_admin_keyboard()
             )
         else:
-            await update.message.reply_text("❌ لم يتم العثور على القسم.")
+            await update.message.reply_text("❌ لم يتم العثور على القناة.")
     
     except ValueError:
         await update.message.reply_text("❌ الرجاء إدخال رقم صحيح.")
     
     return ConversationHandler.END
 
-async def show_all_categories(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    content = BotDatabase.read_json(CONTENT_FILE)
-    categories = content.get("categories", [])
+async def show_all_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    channels = BotDatabase.get_channels()
     
-    if not categories:
-        await update.message.reply_text("📭 لا توجد أقسام.")
+    if not channels:
+        await update.message.reply_text("📭 لا توجد قنوات.")
         return
     
-    text = "📋 جميع الأقسام:\n\n"
-    for cat in categories:
-        items_count = len([item for item in content.get('content', []) if item.get('category_id') == cat['id']])
-        text += f"• {cat['name']}\n"
-        text += f"  🆔 الرقم: {cat['id']}\n"
-        text += f"  📊 المحتوى: {items_count} عنصر\n"
-        text += f"  📅 التاريخ: {cat.get('created_date', '')[:10]}\n\n"
+    text = "📋 جميع القنوات:\n\n"
+    for channel in channels:
+        text += f"• {channel['name']}\n"
+        text += f"  🆔 الرقم: {channel['id']}\n"
+        text += f"  🔗 الرابط: {channel['link']}\n"
+        text += f"  📅 التاريخ: {channel.get('created_date', '')[:10]}\n\n"
     
     await update.message.reply_text(text)
 
 async def show_content_management(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    content = BotDatabase.read_json(CONTENT_FILE)
-    items_count = len(content.get("content", []))
+    content = BotDatabase.get_all_content()
+    items_count = len(content)
     
     text = f"🎭 إدارة المحتوى\n\nإجمالي العناصر: {items_count}\n\n"
     text += "اختر الإجراء المطلوب:"
@@ -1365,31 +1019,33 @@ async def add_content_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         context.user_data['text_content'] = text_content
         
-        # الانتقال لاختيار القسم
-        content_data = BotDatabase.read_json(CONTENT_FILE)
-        categories = content_data.get("categories", [])
+        # إنشاء المحتوى
+        content_id = max([item.get('id', 0) for item in BotDatabase.get_all_content()] or [0]) + 1
+        new_content = BotDatabase.add_content(
+            context.user_data['content_title'],
+            context.user_data['content_type'],
+            text_content,
+            "",
+            content_id
+        )
         
-        if not categories:
-            await update.message.reply_text(
-                "❌ لا توجد أقسام. يجب إنشاء قسم أولاً.",
-                reply_markup=KeyboardManager.get_admin_keyboard()
-            )
-            return ConversationHandler.END
+        # تنظيف البيانات المؤقتة
+        if 'content_text' in context.user_data:
+            del context.user_data['content_text']
+        if 'text_parts' in context.user_data:
+            del context.user_data['text_parts']
         
-        text = "✅ تم حفظ النص بنجاح!\n\n"
-        text += f"عدد الأحرف: {len(text_content)}\n"
-        text += "اختر القسم لإضافة المحتوى:\n\n"
+        await update.message.reply_text(
+            f"✅ تم إضافة المحتوى بنجاح!\n\n"
+            f"📖 العنوان: {new_content['title']}\n"
+            f"🎯 النوع: {new_content['content_type']}\n"
+            f"🆔 الرقم: {new_content['id']}\n"
+            f"🔗 رابط المشاركة: {new_content['share_url']}\n"
+            f"📊 عدد الأحرف: {len(new_content['text_content'])}",
+            reply_markup=KeyboardManager.get_admin_keyboard()
+        )
         
-        keyboard_buttons = []
-        for cat in categories:
-            text += f"• {cat['name']} (ID: {cat['id']})\n"
-            keyboard_buttons.append([f"القسم {cat['id']}"])
-        
-        keyboard_buttons.append(["🏠 الرئيسية"])
-        keyboard = ReplyKeyboardMarkup(keyboard_buttons, resize_keyboard=True)
-        
-        await update.message.reply_text(text, reply_markup=keyboard)
-        return ADD_CONTENT_CATEGORY
+        return ConversationHandler.END
     
     elif user_input == "❌ إلغاء الإضافة":
         # تنظيف البيانات المؤقتة
@@ -1442,29 +1098,26 @@ async def add_content_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         file_id = update.message.document.file_id
     
     if file_id:
-        context.user_data['file_id'] = file_id
+        # إنشاء المحتوى
+        content_id = max([item.get('id', 0) for item in BotDatabase.get_all_content()] or [0]) + 1
+        new_content = BotDatabase.add_content(
+            context.user_data['content_title'],
+            context.user_data['content_type'],
+            "",
+            file_id,
+            content_id
+        )
         
-        content_data = BotDatabase.read_json(CONTENT_FILE)
-        categories = content_data.get("categories", [])
+        await update.message.reply_text(
+            f"✅ تم إضافة المحتوى بنجاح!\n\n"
+            f"📖 العنوان: {new_content['title']}\n"
+            f"🎯 النوع: {new_content['content_type']}\n"
+            f"🆔 الرقم: {new_content['id']}\n"
+            f"🔗 رابط المشاركة: {new_content['share_url']}",
+            reply_markup=KeyboardManager.get_admin_keyboard()
+        )
         
-        if not categories:
-            await update.message.reply_text(
-                "❌ لا توجد أقسام. يجب إنشاء قسم أولاً.",
-                reply_markup=KeyboardManager.get_admin_keyboard()
-            )
-            return ConversationHandler.END
-        
-        text = "اختر القسم لإضافة المحتوى:\n\n"
-        keyboard_buttons = []
-        for cat in categories:
-            text += f"• {cat['name']} (ID: {cat['id']})\n"
-            keyboard_buttons.append([f"القسم {cat['id']}"])
-        
-        keyboard_buttons.append(["🏠 الرئيسية"])
-        keyboard = ReplyKeyboardMarkup(keyboard_buttons, resize_keyboard=True)
-        
-        await update.message.reply_text(text, reply_markup=keyboard)
-        return ADD_CONTENT_CATEGORY
+        return ConversationHandler.END
     else:
         await update.message.reply_text(
             "❌ لم يتم إرسال ملف من النوع المطلوب. حاول مرة أخرى.",
@@ -1472,61 +1125,8 @@ async def add_content_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return ADD_CONTENT_FILE
 
-async def add_content_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        # استخراج رقم القسم من النص
-        user_input = update.message.text
-        if user_input.startswith("القسم "):
-            category_id = int(user_input.replace("القسم ", ""))
-        else:
-            category_id = int(user_input)
-        
-        content_data = BotDatabase.read_json(CONTENT_FILE)
-        categories = content_data.get("categories", [])
-        
-        category_exists = any(cat['id'] == category_id for cat in categories)
-        if not category_exists:
-            await update.message.reply_text("❌ القسم غير موجود.")
-            return ConversationHandler.END
-        
-        # إنشاء المحتوى الجديد
-        new_content = {
-            "id": max([item.get('id', 0) for item in content_data.get('content', [])] or [0]) + 1,
-            "title": context.user_data['content_title'],
-            "content_type": context.user_data['content_type'],
-            "text_content": context.user_data.get('text_content', ''),
-            "file_id": context.user_data.get('file_id', ''),
-            "category_id": category_id,
-            "created_date": datetime.now().isoformat()
-        }
-        
-        # إضافة المحتوى
-        content_data["content"].append(new_content)
-        BotDatabase.write_json(CONTENT_FILE, content_data)
-        
-        # تنظيف البيانات المؤقتة
-        if 'content_text' in context.user_data:
-            del context.user_data['content_text']
-        if 'text_parts' in context.user_data:
-            del context.user_data['text_parts']
-        
-        await update.message.reply_text(
-            f"✅ تم إضافة المحتوى بنجاح!\n\n"
-            f"📖 العنوان: {new_content['title']}\n"
-            f"🎯 النوع: {new_content['content_type']}\n"
-            f"📂 القسم: {category_id}\n"
-            f"📊 عدد الأحرف: {len(new_content['text_content']) if new_content['content_type'] == 'text' else 'N/A'}",
-            reply_markup=KeyboardManager.get_admin_keyboard()
-        )
-        
-    except ValueError:
-        await update.message.reply_text("❌ الرجاء إدخال رقم قسم صحيح.")
-    
-    return ConversationHandler.END
-
 async def start_delete_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    content_data = BotDatabase.read_json(CONTENT_FILE)
-    content_items = content_data.get("content", [])
+    content_items = BotDatabase.get_all_content()
     
     if not content_items:
         await update.message.reply_text("❌ لا يوجد محتوى لحذفه.")
@@ -1547,21 +1147,11 @@ async def start_delete_content(update: Update, context: ContextTypes.DEFAULT_TYP
 async def delete_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         content_id = int(update.message.text)
-        content_data = BotDatabase.read_json(CONTENT_FILE)
-        content_items = content_data.get("content", [])
+        deleted_content = BotDatabase.delete_content(content_id)
         
-        content_to_delete = None
-        for item in content_items:
-            if item['id'] == content_id:
-                content_to_delete = item
-                break
-        
-        if content_to_delete:
-            content_data["content"] = [item for item in content_items if item['id'] != content_id]
-            BotDatabase.write_json(CONTENT_FILE, content_data)
-            
+        if deleted_content:
             await update.message.reply_text(
-                f"✅ تم حذف المحتوى: {content_to_delete['title']}",
+                f"✅ تم حذف المحتوى: {deleted_content['title']}",
                 reply_markup=KeyboardManager.get_admin_keyboard()
             )
         else:
@@ -1573,9 +1163,7 @@ async def delete_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 async def show_all_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    content_data = BotDatabase.read_json(CONTENT_FILE)
-    content_items = content_data.get("content", [])
-    categories = content_data.get("categories", [])
+    content_items = BotDatabase.get_all_content()
     
     if not content_items:
         await update.message.reply_text("📭 لا يوجد محتوى.")
@@ -1583,16 +1171,10 @@ async def show_all_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     text = "📋 جميع المحتويات:\n\n"
     for item in content_items[:15]:
-        category_name = "غير معروف"
-        for cat in categories:
-            if cat['id'] == item.get('category_id'):
-                category_name = cat['name']
-                break
-        
         text += f"• {item['title']}\n"
         text += f"  🆔 الرقم: {item['id']}\n"
-        text += f"  📂 القسم: {category_name}\n"
         text += f"  🎯 النوع: {item['content_type']}\n"
+        text += f"  🔗 الرابط: {item.get('share_url', '')}\n"
         text += f"  📅 التاريخ: {item.get('created_date', '')[:10]}\n\n"
     
     if len(content_items) > 15:
@@ -1600,6 +1182,211 @@ async def show_all_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(text)
 
+# باقي الدوال (إدارة الاشتراك الإجباري، الإعدادات، البث، النسخ الاحتياطي) تبقى كما هي
+# ... [الكود المتبقي يبقى كما هو مع تعديلات بسيطة للتكيف مع التغييرات]
+
+async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    data = query.data
+    user_id = update.effective_user.id
+    
+    # التحقق من أن المستخدم مفعل
+    if not is_user_approved(user_id) and not is_admin(user_id):
+        await query.edit_message_text(
+            "⏳ طلبك قيد المراجعة من قبل المدير...\n"
+            "سيتم إعلامك فور الموافقة على طلبك."
+        )
+        return
+    
+    if data.startswith("content_"):
+        content_id = int(data.split("_")[1])
+        await show_content_item_from_message(update, context, content_id)
+    elif data == "back_to_channels":
+        await show_channels_to_user(update, context)
+    elif data == "back_to_main":
+        if is_admin(user_id):
+            await query.edit_message_text("🏠 العودة للرئيسية", reply_markup=KeyboardManager.get_admin_keyboard())
+        else:
+            await query.edit_message_text("🏠 العودة للرئيسية", reply_markup=KeyboardManager.get_user_keyboard())
+    elif not is_admin(user_id):
+        await query.edit_message_text("❌ ليس لديك صلاحية للقيام بهذا الإجراء.")
+        return
+    elif data.startswith("accept_"):
+        target_user = data.split("_")[1]
+        await accept_user_callback(update, context, target_user)
+    elif data.startswith("reject_"):
+        target_user = data.split("_")[1]
+        await reject_user_callback(update, context, target_user)
+    elif data == "view_requests":
+        await show_pending_requests(update, context)
+
+async def accept_user_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, target_user_id: str):
+    users = BotDatabase.read_json(USERS_FILE)
+    
+    if target_user_id in users:
+        users[target_user_id]["approved"] = True
+        BotDatabase.write_json(USERS_FILE, users)
+        
+        requests = BotDatabase.read_json(REQUESTS_FILE)
+        requests = [r for r in requests if r['user_id'] != target_user_id]
+        BotDatabase.write_json(REQUESTS_FILE, requests)
+        
+        try:
+            await context.bot.send_message(
+                int(target_user_id),
+                BotDatabase.get_setting("responses.welcome"),
+                reply_markup=KeyboardManager.get_user_keyboard()
+            )
+        except Exception as e:
+            logger.error(f"Error sending message to user: {e}")
+        
+        await update.callback_query.edit_message_text(f"✅ تم قبول المستخدم: {users[target_user_id]['first_name']}")
+    else:
+        await update.callback_query.edit_message_text("❌ المستخدم غير موجود")
+
+async def reject_user_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, target_user_id: str):
+    users = BotDatabase.read_json(USERS_FILE)
+    
+    if target_user_id in users:
+        user_name = users[target_user_id]['first_name']
+        
+        try:
+            await context.bot.send_message(int(target_user_id), BotDatabase.get_setting("responses.rejected"))
+        except Exception as e:
+            logger.error(f"Error sending message to user: {e}")
+        
+        del users[target_user_id]
+        BotDatabase.write_json(USERS_FILE, users)
+        
+        requests = BotDatabase.read_json(REQUESTS_FILE)
+        requests = [r for r in requests if r['user_id'] != target_user_id]
+        BotDatabase.write_json(REQUESTS_FILE, requests)
+        
+        await update.callback_query.edit_message_text(f"❌ تم رفض المستخدم: {user_name}")
+    else:
+        await update.callback_query.edit_message_text("❌ المستخدم غير موجود")
+
+def main():
+    # التحقق من وجود التوكن
+    if BOT_TOKEN == 'YOUR_BOT_TOKEN_HERE':
+        print("❌ لم يتم تعيين التوكن! يرجى تعيين متغير البيئة BOT_TOKEN")
+        return
+    
+    BotDatabase.init_default_data()
+    
+    application = Application.builder().token(BOT_TOKEN).build()
+    
+    # محادثات المدير
+    add_channel_conv = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex("^➕ إضافة قناة$"), start_add_channel)],
+        states={
+            ADD_CHANNEL_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_channel_name)],
+            ADD_CHANNEL_LINK: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_channel_link)],
+        },
+        fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
+    )
+    
+    delete_channel_conv = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex("^🗑️ حذف قناة$"), start_delete_channel)],
+        states={
+            DELETE_CHANNEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, delete_channel)],
+        },
+        fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
+    )
+    
+    add_content_conv = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex("^➕ إضافة محتوى$"), start_add_content)],
+        states={
+            ADD_CONTENT_TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_content_title)],
+            ADD_CONTENT_TYPE: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_content_type)],
+            ADD_CONTENT_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_content_text)],
+            ADD_CONTENT_FILE: [MessageHandler(filters.PHOTO | filters.VIDEO | filters.Document.ALL, add_content_file)],
+        },
+        fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
+    )
+    
+    delete_content_conv = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex("^🗑️ حذف محتوى$"), start_delete_content)],
+        states={
+            DELETE_CONTENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, delete_content)],
+        },
+        fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
+    )
+    
+        delete_user_conv = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex("^🗑️ حذف مستخدم$"), start_delete_user)],
+        states={
+            DELETE_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, delete_user)],
+        },
+        fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
+    )
+    
+    subscription_conv = ConversationHandler(
+        entry_points=[
+            MessageHandler(filters.Regex("^✏️ تعديل الرسالة$"), start_edit_subscription_message),
+            MessageHandler(filters.Regex("^📝 إضافة قناة$"), start_add_subscription_channel),
+            MessageHandler(filters.Regex("^🗑️ حذف قناة$"), start_delete_subscription_channel),
+        ],
+        states={
+            EDIT_SUBSCRIPTION_MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_subscription_message)],
+            ADD_SUBSCRIPTION_CHANNEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_subscription_channel)],
+            DELETE_SUBSCRIPTION_CHANNEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, delete_subscription_channel)],
+        },
+        fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
+    )
+    
+    settings_conv = ConversationHandler(
+        entry_points=[
+            MessageHandler(filters.Regex("^✏️ تعديل رسالة الترحيب$"), lambda u, c: start_edit_response(u, c, "welcome")),
+            MessageHandler(filters.Regex("^✏️ تعديل رسالة الرفض$"), lambda u, c: start_edit_response(u, c, "rejected")),
+            MessageHandler(filters.Regex("^✏️ تعديل رسالة المساعدة$"), lambda u, c: start_edit_response(u, c, "help")),
+        ],
+        states={
+            EDIT_RESPONSE: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_response)],
+        },
+        fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
+    )
+    
+    broadcast_conv = ConversationHandler(
+        entry_points=[
+            MessageHandler(filters.Regex("^📢 بث لجميع المستخدمين$"), start_broadcast),
+            MessageHandler(filters.Regex("^👤 بث لمستخدم محدد$"), start_send_to_user),
+        ],
+        states={
+            BROADCAST_MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, broadcast_message)],
+            SEND_TO_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, send_to_user)],
+        },
+        fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
+    )
+    
+    backup_conv = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex("^🔄 رفع نسخة$"), start_restore_backup)],
+        states={
+            BACKUP_RESTORE: [MessageHandler(filters.Document.ALL, restore_backup)],
+        },
+        fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
+    )
+    
+    # إضافة جميع handlers
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(add_channel_conv)
+    application.add_handler(delete_channel_conv)
+    application.add_handler(add_content_conv)
+    application.add_handler(delete_content_conv)
+    application.add_handler(delete_user_conv)
+    application.add_handler(subscription_conv)
+    application.add_handler(settings_conv)
+    application.add_handler(broadcast_conv)
+    application.add_handler(backup_conv)
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    application.add_handler(CallbackQueryHandler(handle_callback))
+    
+    print("🤖 البوت يعمل...")
+    application.run_polling()
+
+# باقي الدوال التي تحتاج لإكمالها
 async def show_subscription_management(update: Update, context: ContextTypes.DEFAULT_TYPE):
     enabled = BotDatabase.get_setting("subscription.enabled")
     channels = BotDatabase.get_setting("subscription.channels")
@@ -1851,6 +1638,7 @@ async def download_backup(update: Update, context: ContextTypes.DEFAULT_TYPE):
         backup_data = {
             "users": BotDatabase.read_json(USERS_FILE),
             "content": BotDatabase.read_json(CONTENT_FILE),
+            "channels": BotDatabase.read_json(CHANNELS_FILE),
             "settings": BotDatabase.read_json(SETTINGS_FILE),
             "backup_date": datetime.now().isoformat(),
             "backup_info": "تم إنشاء هذه النسخة بواسطة بوت التليجرام"
@@ -1906,7 +1694,7 @@ async def restore_backup(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 backup_data = json.load(f)
             
             # التحقق من صحة البيانات
-            if not all(key in backup_data for key in ['users', 'content', 'settings']):
+            if not all(key in backup_data for key in ['users', 'content', 'channels', 'settings']):
                 await update.message.reply_text(
                     "❌ ملف النسخة الاحتياطية غير صالح.",
                     reply_markup=KeyboardManager.get_backup_keyboard()
@@ -1917,6 +1705,7 @@ async def restore_backup(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # استعادة البيانات
             BotDatabase.write_json(USERS_FILE, backup_data.get('users', {}))
             BotDatabase.write_json(CONTENT_FILE, backup_data.get('content', {}))
+            BotDatabase.write_json(CHANNELS_FILE, backup_data.get('channels', {}))
             BotDatabase.write_json(SETTINGS_FILE, backup_data.get('settings', {}))
             
             # تنظيف الملف المؤقت
@@ -1966,209 +1755,6 @@ async def show_backups(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     
     await update.message.reply_text(text, reply_markup=KeyboardManager.get_backup_keyboard())
-
-async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    data = query.data
-    user_id = update.effective_user.id
-    
-    # التحقق من أن المستخدم مفعل
-    if not is_user_approved(user_id) and not is_admin(user_id):
-        await query.edit_message_text(
-            "⏳ طلبك قيد المراجعة من قبل المدير...\n"
-            "سيتم إعلامك فور الموافقة على طلبك."
-        )
-        return
-    
-    if data.startswith("content_"):
-        content_id = int(data.split("_")[1])
-        await show_content_item(update, context, content_id)
-    elif data.startswith("category_"):
-        category_id = int(data.split("_")[1])
-        await show_category_content_list(update, context, category_id)
-    elif data == "back_to_categories":
-        await show_categories_to_user(update, context)
-    elif data == "back_to_main":
-        if is_admin(user_id):
-            await query.edit_message_text("🏠 العودة للرئيسية", reply_markup=KeyboardManager.get_admin_keyboard())
-        else:
-            await query.edit_message_text("🏠 العودة للرئيسية", reply_markup=KeyboardManager.get_user_keyboard())
-    elif not is_admin(user_id):
-        await query.edit_message_text("❌ ليس لديك صلاحية للقيام بهذا الإجراء.")
-        return
-    elif data.startswith("accept_"):
-        target_user = data.split("_")[1]
-        await accept_user_callback(update, context, target_user)
-    elif data.startswith("reject_"):
-        target_user = data.split("_")[1]
-        await reject_user_callback(update, context, target_user)
-    elif data == "view_requests":
-        await show_pending_requests(update, context)
-
-async def accept_user_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, target_user_id: str):
-    users = BotDatabase.read_json(USERS_FILE)
-    
-    if target_user_id in users:
-        users[target_user_id]["approved"] = True
-        BotDatabase.write_json(USERS_FILE, users)
-        
-        requests = BotDatabase.read_json(REQUESTS_FILE)
-        requests = [r for r in requests if r['user_id'] != target_user_id]
-        BotDatabase.write_json(REQUESTS_FILE, requests)
-        
-        try:
-            await context.bot.send_message(
-                int(target_user_id),
-                BotDatabase.get_setting("responses.welcome"),
-                reply_markup=KeyboardManager.get_user_keyboard()
-            )
-        except Exception as e:
-            logger.error(f"Error sending message to user: {e}")
-        
-        await update.callback_query.edit_message_text(f"✅ تم قبول المستخدم: {users[target_user_id]['first_name']}")
-    else:
-        await update.callback_query.edit_message_text("❌ المستخدم غير موجود")
-
-async def reject_user_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, target_user_id: str):
-    users = BotDatabase.read_json(USERS_FILE)
-    
-    if target_user_id in users:
-        user_name = users[target_user_id]['first_name']
-        
-        try:
-            await context.bot.send_message(int(target_user_id), BotDatabase.get_setting("responses.rejected"))
-        except Exception as e:
-            logger.error(f"Error sending message to user: {e}")
-        
-        del users[target_user_id]
-        BotDatabase.write_json(USERS_FILE, users)
-        
-        requests = BotDatabase.read_json(REQUESTS_FILE)
-        requests = [r for r in requests if r['user_id'] != target_user_id]
-        BotDatabase.write_json(REQUESTS_FILE, requests)
-        
-        await update.callback_query.edit_message_text(f"❌ تم رفض المستخدم: {user_name}")
-    else:
-        await update.callback_query.edit_message_text("❌ المستخدم غير موجود")
-
-def main():
-    # التحقق من وجود التوكن
-    if BOT_TOKEN == 'YOUR_BOT_TOKEN_HERE':
-        print("❌ لم يتم تعيين التوكن! يرجى تعيين متغير البيئة BOT_TOKEN")
-        return
-    
-    BotDatabase.init_default_data()
-    
-    application = Application.builder().token(BOT_TOKEN).build()
-    
-    # محادثات المدير
-    add_category_conv = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex("^➕ إضافة قسم$"), start_add_category)],
-        states={
-            ADD_CATEGORY_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_category_name)],
-        },
-        fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
-    )
-    
-    delete_category_conv = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex("^🗑️ حذف قسم$"), start_delete_category)],
-        states={
-            DELETE_CATEGORY: [MessageHandler(filters.TEXT & ~filters.COMMAND, delete_category)],
-        },
-        fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
-    )
-    
-    add_content_conv = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex("^➕ إضافة محتوى$"), start_add_content)],
-        states={
-            ADD_CONTENT_TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_content_title)],
-            ADD_CONTENT_TYPE: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_content_type)],
-            ADD_CONTENT_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_content_text)],
-            ADD_CONTENT_FILE: [MessageHandler(filters.PHOTO | filters.VIDEO | filters.Document.ALL, add_content_file)],
-            ADD_CONTENT_CATEGORY: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_content_category)],
-        },
-        fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
-    )
-    
-    delete_content_conv = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex("^🗑️ حذف محتوى$"), start_delete_content)],
-        states={
-            DELETE_CONTENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, delete_content)],
-        },
-        fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
-    )
-    
-    delete_user_conv = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex("^🗑️ حذف مستخدم$"), start_delete_user)],
-        states={
-            DELETE_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, delete_user)],
-        },
-        fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
-    )
-    
-    subscription_conv = ConversationHandler(
-        entry_points=[
-            MessageHandler(filters.Regex("^✏️ تعديل الرسالة$"), start_edit_subscription_message),
-            MessageHandler(filters.Regex("^📝 إضافة قناة$"), start_add_subscription_channel),
-            MessageHandler(filters.Regex("^🗑️ حذف قناة$"), start_delete_subscription_channel),
-        ],
-        states={
-            EDIT_SUBSCRIPTION_MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_subscription_message)],
-            ADD_SUBSCRIPTION_CHANNEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_subscription_channel)],
-            DELETE_SUBSCRIPTION_CHANNEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, delete_subscription_channel)],
-        },
-        fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
-    )
-    
-    settings_conv = ConversationHandler(
-        entry_points=[
-            MessageHandler(filters.Regex("^✏️ تعديل رسالة الترحيب$"), lambda u, c: start_edit_response(u, c, "welcome")),
-            MessageHandler(filters.Regex("^✏️ تعديل رسالة الرفض$"), lambda u, c: start_edit_response(u, c, "rejected")),
-            MessageHandler(filters.Regex("^✏️ تعديل رسالة المساعدة$"), lambda u, c: start_edit_response(u, c, "help")),
-        ],
-        states={
-            EDIT_RESPONSE: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_response)],
-        },
-        fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
-    )
-    
-    broadcast_conv = ConversationHandler(
-        entry_points=[
-            MessageHandler(filters.Regex("^📢 بث لجميع المستخدمين$"), start_broadcast),
-            MessageHandler(filters.Regex("^👤 بث لمستخدم محدد$"), start_send_to_user),
-        ],
-        states={
-            BROADCAST_MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, broadcast_message)],
-            SEND_TO_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, send_to_user)],
-        },
-        fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
-    )
-    
-    backup_conv = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex("^🔄 رفع نسخة$"), start_restore_backup)],
-        states={
-            BACKUP_RESTORE: [MessageHandler(filters.Document.ALL, restore_backup)],
-        },
-        fallbacks=[MessageHandler(filters.Regex("^🏠 الرئيسية$"), show_admin_dashboard)]
-    )
-    
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(add_category_conv)
-    application.add_handler(delete_category_conv)
-    application.add_handler(add_content_conv)
-    application.add_handler(delete_content_conv)
-    application.add_handler(delete_user_conv)
-    application.add_handler(subscription_conv)
-    application.add_handler(settings_conv)
-    application.add_handler(broadcast_conv)
-    application.add_handler(backup_conv)
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    application.add_handler(CallbackQueryHandler(handle_callback))
-    
-    print("🤖 البوت يعمل...")
-    application.run_polling()
 
 if __name__ == "__main__":
     main()
