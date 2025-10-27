@@ -16,7 +16,13 @@ logger = logging.getLogger(__name__)
 
 # بيانات البوت - سيتم تعيين التوكن من متغير البيئة
 BOT_TOKEN = os.getenv('BOT_TOKEN', 'YOUR_BOT_TOKEN_HERE')
-ADMIN_IDS = []  # سيتم إضافة المدير تلقائياً
+
+# قراءة ADMIN_IDS من متغير البيئة
+ADMIN_IDS_ENV = os.getenv('ADMIN_IDS')
+if ADMIN_IDS_ENV:
+    ADMIN_IDS = [int(admin_id.strip()) for admin_id in ADMIN_IDS_ENV.split(',') if admin_id.strip().isdigit()]
+else:
+    ADMIN_IDS = []
 
 # حالات المحادثة
 (
