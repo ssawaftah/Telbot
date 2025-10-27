@@ -200,7 +200,7 @@ class BotDatabase:
             "text_content": text_content,
             "file_id": file_id,
             "created_date": datetime.now().isoformat(),
-            "share_url": f"https://t.me/{(BOT_TOKEN.split(':')[0])}?start=content_{content_id}"
+            "share_url": f"https://t.me/ineswangybot?start=content_{content_id}"
         }
         
         content_data["content"].append(new_content)
@@ -505,7 +505,7 @@ async def show_content_item_from_message(update: Update, context: ContextTypes.D
     try:
         if content_item['content_type'] == 'text':
             # عرض النص البسيط
-            message_text = f"**{content_item['title']}**\n\n{content_item['text_content']}\n\n🔗 رابط المشاركة: {content_item.get('share_url', '')}"
+            message_text = f"**{content_item['title']}**\n\n{content_item['text_content']}\n\n🔗 راyyبط المشاركة: {content_item.get('share_url', '')}"
             
             # إذا كان النص طويلاً جداً، نقسمه
             if len(message_text) > 4096:
