@@ -47,7 +47,7 @@ REQUESTS_FILE = os.path.join(DATA_DIR, "requests.json")
 
 class BotDatabase:
    @staticmethod
-def init_default_data():
+   def init_default_data():
     default_data = {
         USERS_FILE: {},
         CONTENT_FILE: {
