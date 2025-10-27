@@ -701,6 +701,25 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
     else:
         await handle_channel_selection(update, context, text)
 
+# دالة handle_message الموحدة
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    text = update.message.text
+    
+    # التحقق من أن المستخدم مفعل أولاً
+    if not is_user_approved(user_id) and not is_admin(user_id):
+        await update.message.reply_text(
+            "⏳ طلبك قيد المراجعة من قبل المدير...\n"
+            "سيتم إعلامك فور الموافقة على طلبك.",
+            reply_markup=KeyboardManager.get_waiting_keyboard()
+        )
+        return
+    
+    if is_admin(user_id):
+        await handle_admin_message(update, context, text)
+    else:
+        await handle_user_message(update, context, text)
+
 async def show_admin_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     users = BotDatabase.read_json(USERS_FILE)
     content = BotDatabase.get_all_content()
