@@ -46,13 +46,13 @@ SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 REQUESTS_FILE = os.path.join(DATA_DIR, "requests.json")
 
 class BotDatabase:
-    @staticmethod
+   @staticmethod
 def format_markdown(text, parse_mode='Markdown'):
     """
     تنسيق النص بناءً على نوع Markdown المطلوب
     """
     if parse_mode == 'MarkdownV2':
-        # هروب الأحخاص الخاصة في MarkdownV2
+        # هروب الأحرف الخاصة في MarkdownV2
         escape_chars = r'_*[]()~`>#+-=|{}.!'
         for char in escape_chars:
             text = text.replace(char, f'\\{char}')
